@@ -1,4 +1,4 @@
-"""출고 단가 관리 대시보드."""
+"""출고 단가 점검 — 전체 교체용 app.py"""
 
 import hashlib
 import io
@@ -34,7 +34,7 @@ CSS = """
 }
 
 [data-testid="stHeader"] {
-    background: rgba(243, 245, 249, 0.96);
+    background: rgba(243,245,249,.96);
 }
 
 .block-container {
@@ -51,7 +51,7 @@ html, body, .stApp, input, button, textarea {
 
 h1, h2, h3 {
     color: #172B46;
-    letter-spacing: -0.04em;
+    letter-spacing: -.04em;
 }
 
 h3 {
@@ -65,9 +65,9 @@ h3 {
 }
 
 .hero {
-    background: linear-gradient(115deg, #152840, #24496D);
+    background: linear-gradient(115deg,#152840,#24496D);
     border-radius: 20px;
-    padding: 32px 36px;
+    padding: 30px 36px;
     margin-bottom: 24px;
     box-shadow: 0 12px 30px #15284012;
 }
@@ -75,7 +75,7 @@ h3 {
 .eyebrow {
     color: #A9C7E5;
     font-size: 11px;
-    letter-spacing: 0.19em;
+    letter-spacing: .19em;
     font-weight: 700;
 }
 
@@ -83,7 +83,7 @@ h3 {
     color: white;
     font-size: 34px;
     font-weight: 800;
-    letter-spacing: -0.05em;
+    letter-spacing: -.05em;
     margin: 10px 0;
 }
 
@@ -113,7 +113,7 @@ h3 {
     display: flex;
     gap: 12px;
     align-items: flex-start;
-    margin: 28px 0 16px;
+    margin: 26px 0 16px;
 }
 
 .section-num {
@@ -132,7 +132,7 @@ h3 {
 .section-title {
     font-size: 19px;
     font-weight: 750;
-    letter-spacing: -0.04em;
+    letter-spacing: -.04em;
     line-height: 1.5;
 }
 
@@ -171,10 +171,10 @@ h3 {
 }
 
 [data-testid="stMetricValue"] {
-    font-size: clamp(24px, 2.5vw, 34px);
+    font-size: clamp(24px,2.5vw,34px);
     font-weight: 700;
     color: #172B46;
-    letter-spacing: -0.05em;
+    letter-spacing: -.05em;
 }
 
 [data-testid="stForm"] {
@@ -220,6 +220,34 @@ button[kind="primaryFormSubmit"]:hover {
     color: white;
 }
 
+[data-baseweb="tab-list"] {
+    gap: 8px;
+    margin-top: 22px;
+    border-bottom: 1px solid #DCE4EF;
+    padding-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+[data-baseweb="tab"] {
+    height: auto;
+    min-height: 52px;
+    padding: 14px 20px;
+    border-radius: 10px;
+    background: #E9EEF6;
+    color: #54667E;
+    font-weight: 650;
+    white-space: normal;
+}
+
+[data-baseweb="tab"][aria-selected="true"] {
+    background: #245BD7;
+    color: white;
+}
+
+[data-baseweb="tab-highlight"] {
+    display: none;
+}
+
 .footer {
     border-top: 1px solid #DDE5EF;
     margin-top: 36px;
@@ -229,7 +257,7 @@ button[kind="primaryFormSubmit"]:hover {
     line-height: 1.8;
 }
 
-@media (max-width: 640px) {
+@media (max-width:640px) {
     .block-container {
         padding: 1.5rem 1rem 3rem;
     }
@@ -246,13 +274,18 @@ button[kind="primaryFormSubmit"]:hover {
         min-height: 105px;
         padding: 16px;
     }
+
+    [data-baseweb="tab"] {
+        padding: 12px;
+        font-size: 12px;
+    }
 }
 </style>
 """
 
 
 def section(number, title, description):
-    # 고정된 화면 문구에만 사용하는 함수입니다.
+    # 고정된 화면 문구에만 사용합니다.
     st.markdown(
         f"""
         <div class="section">
@@ -269,13 +302,11 @@ def section(number, title, description):
 
 def read_excel(upload):
     upload.seek(0)
-
     engine = (
         "xlrd"
         if upload.name.lower().endswith(".xls")
         else "openpyxl"
     )
-
     frame = pd.read_excel(
         upload,
         engine=engine,
@@ -283,7 +314,6 @@ def read_excel(upload):
         keep_default_na=False,
     )
     frame.columns = frame.columns.astype(str).str.strip()
-
     return frame
 
 
@@ -321,7 +351,6 @@ def validate(price, shipment, tolerance):
 
     for frame, required, name in requirements:
         missing = set(required) - set(frame.columns)
-
         if missing:
             raise ValueError(
                 f"{name}에 필요한 열이 없습니다: "
@@ -343,7 +372,6 @@ def validate(price, shipment, tolerance):
         )
 
     price["기준단가"] = number(price["판매단가"])
-
     price = price[
         ["코드", "품번", "기준단가", "시작일자", "종료일자"]
     ].rename(
@@ -361,7 +389,7 @@ def validate(price, shipment, tolerance):
     if shipment.empty:
         raise ValueError("출고 상세 데이터가 없습니다.")
 
-    # 기존 버전과 동일한 방식으로 상세행을 식별합니다.
+    # 기존 버전의 상세행 키 생성 방식을 유지합니다.
     shipment["행키"] = [
         hashlib.sha256(
             f"{i}|{row['출고번호']}|{row['품번']}".encode()
@@ -379,10 +407,7 @@ def validate(price, shipment, tolerance):
     for col in ["출고수량", "단가"]:
         result[col] = number(result[col])
 
-    result["단가차이"] = (
-        result["단가"] - result["기준단가"]
-    )
-
+    result["단가차이"] = result["단가"] - result["기준단가"]
     result["출고월"] = (
         result["출고일자"].str[:4]
         + "-"
@@ -390,21 +415,14 @@ def validate(price, shipment, tolerance):
     )
 
     def judge(row):
-        if (
-            pd.isna(row["출고수량"])
-            or pd.isna(row["단가"])
-        ):
+        if pd.isna(row["출고수량"]) or pd.isna(row["단가"]):
             return "데이터 확인"
-
         if row["출고수량"] <= 0:
             return "조정·반품 확인"
-
         if pd.isna(row["기준단가"]):
             return "기준단가 확인"
-
         if abs(row["단가차이"]) > tolerance:
             return "단가차이 확인"
-
         return "일치"
 
     result["판정"] = result.apply(judge, axis=1)
@@ -412,11 +430,9 @@ def validate(price, shipment, tolerance):
     comparable = result["판정"].isin(
         ["일치", "단가차이 확인"]
     )
-
     result["차이금액"] = (
         result["단가차이"] * result["출고수량"]
     ).where(comparable)
-
     result["차이규모"] = result["차이금액"].abs()
 
     def reference_note(row):
@@ -471,7 +487,6 @@ def validate(price, shipment, tolerance):
         reference_note,
         axis=1,
     )
-
     return result
 
 
@@ -488,7 +503,6 @@ def judgment_style(value):
         return ""
 
     background, foreground = colors[value]
-
     return (
         f"background-color:{background};"
         f"color:{foreground};"
@@ -621,7 +635,6 @@ def export_excel(frame):
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
     output = io.BytesIO()
-
     safe = frame.drop(
         columns=["행키"],
         errors="ignore",
@@ -652,7 +665,6 @@ def export_excel(frame):
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
 
-        # 입력 문자열이 Excel 수식으로 실행되지 않게 합니다.
         for row in sheet:
             for cell in row:
                 if cell.data_type == "f":
@@ -665,9 +677,119 @@ def export_excel(frame):
     return output.getvalue()
 
 
+def render_upload(db):
+    with st.expander(
+        "＋ 새 자료 등록하기 · 처음 이용하거나 새 엑셀을 받았을 때",
+        expanded=False,
+    ):
+        st.info(
+            "① 단가현황 선택 → ② 출고현황 선택 → "
+            "③ 등록 이름 확인 → ‘검증하고 공유 저장’ 클릭"
+        )
+
+        today = datetime.now(
+            ZoneInfo("Asia/Seoul")
+        ).strftime("%Y-%m-%d")
+
+        title = st.text_input(
+            "등록 이름",
+            value=f"{today} 단가 점검",
+            help="예: 2026년 11월 마감 · 11월 10일 기준",
+        )
+
+        p, s = st.columns(2)
+
+        price_file = p.file_uploader(
+            "① 단가현황 · 기준이 되는 판매단가",
+            type=["xls", "xlsx"],
+        )
+
+        shipment_file = s.file_uploader(
+            "② 출고현황 · 실제 출고된 내역",
+            type=["xls", "xlsx"],
+        )
+
+        tolerance = st.number_input(
+            "허용할 단가 차이(원)",
+            min_value=0.0,
+            value=0.01,
+            step=0.01,
+            format="%.4f",
+            help=(
+                "이 금액을 초과하는 단가 차이를 "
+                "확인 대상으로 분류합니다."
+            ),
+        )
+
+        st.caption(
+            "기존 자료는 삭제되지 않습니다. "
+            "같은 파일을 다시 저장해도 별도 자료로 등록됩니다."
+        )
+
+        if st.button(
+            "③ 검증하고 공유 저장",
+            type="primary",
+        ):
+            if not price_file or not shipment_file:
+                st.warning(
+                    "두 엑셀 파일을 모두 선택해 주세요."
+                )
+
+            elif not title.strip():
+                st.warning("등록 이름을 입력해 주세요.")
+
+            else:
+                try:
+                    with st.spinner(
+                        "단가를 비교하고 저장하고 있습니다."
+                    ):
+                        result = validate(
+                            read_excel(price_file),
+                            read_excel(shipment_file),
+                            tolerance,
+                        )
+
+                        response = (
+                            db.table("inspection_batches")
+                            .insert({
+                                "title": title.strip(),
+                                "shipment_filename": (
+                                    shipment_file.name
+                                ),
+                                "price_filename": price_file.name,
+                                "results": json.loads(
+                                    result.to_json(
+                                        orient="records",
+                                        force_ascii=False,
+                                        double_precision=15,
+                                    )
+                                ),
+                            })
+                            .execute()
+                        )
+
+                        st.session_state["batch_id"] = (
+                            response.data[0]["id"]
+                        )
+
+                    st.success(
+                        "등록 완료 · 아래 ‘검토할 자료’에서 "
+                        "결과를 확인하세요."
+                    )
+
+                except ValueError as exc:
+                    st.error(str(exc))
+
+                except Exception:
+                    st.error(
+                        "등록하지 못했습니다. "
+                        "파일 형식과 서버 연결을 확인해 주세요."
+                    )
+
+
 def main():
     st.set_page_config(
-        page_title="출고 단가 관리",
+        page_title="출고 단가 점검",
         page_icon="📋",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -679,20 +801,20 @@ def main():
         """
         <div class="hero">
             <div class="eyebrow">
-                SHIPMENT PRICE MANAGEMENT
+                MONTH-END PRICE REVIEW
             </div>
             <div class="hero-title">
-                출고 단가 관리
+                출고 단가 점검
             </div>
             <div class="hero-description">
-                출고 내역과 기준단가를 한눈에 비교하고,<br>
-                확인이 필요한 건부터 팀과 함께 처리하세요.
+                어떤 출고를 확인해야 하는지 찾고,
+                확인한 결과를 팀과 공유하는 공간입니다.
             </div>
             <div class="steps">
-                <span>01 · 엑셀 등록</span>
-                <span>02 · 단가 비교</span>
-                <span>03 · 내역 확인</span>
-                <span>04 · 처리 기록</span>
+                <span>01 자료 선택</span>
+                <span>02 현황 확인</span>
+                <span>03 출고 찾기</span>
+                <span>04 결과 저장</span>
             </div>
         </div>
         """,
@@ -705,113 +827,20 @@ def main():
             st.secrets["SUPABASE_SERVICE_ROLE_KEY"],
         )
     except Exception:
-        st.info(
+        st.error(
             "서버 연결 설정이 필요합니다. "
-            "Streamlit의 Secrets를 확인해 주세요."
+            "Streamlit Secrets를 확인해 주세요."
         )
         st.stop()
 
-    with st.expander(
-        "새 자료 등록 · 단가현황과 출고현황 업로드",
-        expanded=False,
-    ):
-        st.caption(
-            "같은 파일을 다시 저장하면 별도의 검증 자료로 "
-            "등록됩니다. 기존 확인 기록은 원래 자료에 유지됩니다."
-        )
+    section(
+        "01",
+        "먼저, 검토할 자료를 선택하세요",
+        "이미 등록된 자료는 바로 선택하세요. "
+        "새 파일을 받은 경우에만 ‘새 자료 등록하기’를 여세요.",
+    )
 
-        today = datetime.now(
-            ZoneInfo("Asia/Seoul")
-        ).strftime("%Y-%m-%d")
-
-        title = st.text_input(
-            "등록 이름",
-            value=f"{today} 단가 점검",
-        )
-
-        left, right = st.columns(2)
-
-        price_file = left.file_uploader(
-            "① 기준단가 파일 · 단가현황",
-            type=["xls", "xlsx"],
-        )
-
-        shipment_file = right.file_uploader(
-            "② 출고내역 파일 · 출고현황",
-            type=["xls", "xlsx"],
-        )
-
-        tolerance = st.number_input(
-            "허용 단가 차이(원)",
-            min_value=0.0,
-            value=0.01,
-            step=0.01,
-            format="%.4f",
-            help=(
-                "설정 금액을 초과하는 단가 차이를 "
-                "확인 대상으로 표시합니다."
-            ),
-        )
-
-        if st.button(
-            "검증하고 팀에 공유",
-            type="primary",
-        ):
-            if not price_file or not shipment_file:
-                st.warning(
-                    "단가현황과 출고현황을 모두 선택해 주세요."
-                )
-
-            elif not title.strip():
-                st.warning("등록 이름을 입력해 주세요.")
-
-            else:
-                try:
-                    with st.spinner(
-                        "단가 비교 및 공유 저장 중입니다."
-                    ):
-                        result = validate(
-                            read_excel(price_file),
-                            read_excel(shipment_file),
-                            tolerance,
-                        )
-
-                        payload = {
-                            "title": title.strip(),
-                            "shipment_filename": shipment_file.name,
-                            "price_filename": price_file.name,
-                            "results": json.loads(
-                                result.to_json(
-                                    orient="records",
-                                    force_ascii=False,
-                                    double_precision=15,
-                                )
-                            ),
-                        }
-
-                        response = (
-                            db.table("inspection_batches")
-                            .insert(payload)
-                            .execute()
-                        )
-
-                        st.session_state["batch_id"] = (
-                            response.data[0]["id"]
-                        )
-
-                    st.success(
-                        "공유 저장이 완료됐습니다. "
-                        "아래에서 결과를 확인하세요."
-                    )
-
-                except ValueError as exc:
-                    st.error(str(exc))
-
-                except Exception:
-                    st.error(
-                        "등록하지 못했습니다. "
-                        "파일 형식과 서버 설정을 확인해 주세요."
-                    )
+    render_upload(db)
 
     try:
         batches = (
@@ -825,14 +854,15 @@ def main():
     except Exception:
         st.error(
             "공유 자료를 불러오지 못했습니다. "
-            "서버 연결 상태를 확인해 주세요."
+            "잠시 후 새로 고침해 주세요."
         )
         st.stop()
 
     if not batches:
         st.info(
-            "등록된 자료가 없습니다. 위의 ‘새 자료 등록’을 "
-            "열어 엑셀 두 개를 업로드해 주세요."
+            "아직 자료가 없습니다. "
+            "위의 ‘새 자료 등록하기’를 열어 "
+            "엑셀 두 개를 등록하세요."
         )
         st.stop()
 
@@ -845,13 +875,13 @@ def main():
     current = st.session_state.get("batch_id")
 
     with st.container(border=True):
-        select_col, refresh_col = st.columns(
+        a, b = st.columns(
             [5, 1],
             vertical_alignment="bottom",
         )
 
-        selected = select_col.selectbox(
-            "공유 자료 선택 · 최근 200개",
+        selected = a.selectbox(
+            "검토할 자료",
             ids,
             index=(
                 ids.index(current)
@@ -863,8 +893,8 @@ def main():
             ),
         )
 
-        if refresh_col.button(
-            "자료 새로 고침",
+        if b.button(
+            "최신 내용 불러오기",
             use_container_width=True,
         ):
             st.rerun()
@@ -875,15 +905,17 @@ def main():
         ).tz_convert("Asia/Seoul")
 
         st.caption(
-            f"등록일시 {created:%Y.%m.%d %H:%M} · "
-            "다른 직원이 저장한 최신 내용은 "
-            "‘자료 새로 고침’으로 확인하세요."
+            f"등록 {created:%Y.%m.%d %H:%M} · "
+            "다른 직원이 저장한 기록은 "
+            "‘최신 내용 불러오기’로 반영됩니다."
         )
 
     try:
         batch = (
             db.table("inspection_batches")
-            .select("results")
+            .select(
+                "results,shipment_filename,price_filename"
+            )
             .eq("id", selected)
             .single()
             .execute()
@@ -914,14 +946,14 @@ def main():
     except Exception:
         st.error(
             "상세 내역을 불러오지 못했습니다. "
-            "잠시 후 새로 고침해 주세요."
+            "잠시 후 다시 시도해 주세요."
         )
         st.stop()
 
     data = pd.DataFrame(batch["results"])
 
     if data.empty:
-        st.info("선택한 자료에 출고 상세가 없습니다.")
+        st.info("출고 상세가 없는 자료입니다.")
         st.stop()
 
     for col in [
@@ -932,6 +964,9 @@ def main():
             data[col],
             errors="coerce",
         )
+
+    if "기준정보주의" not in data.columns:
+        data["기준정보주의"] = ""
 
     review_map = {
         row["row_key"]: row
@@ -950,7 +985,7 @@ def main():
         )
 
     month = st.selectbox(
-        "출고월",
+        "확인할 출고월 · 아래 모든 화면에 적용",
         ["전체"]
         + sorted(
             data["출고월"].dropna().unique().tolist()
@@ -968,197 +1003,278 @@ def main():
         monthly["판정"].eq("단가차이 확인")
     ]
 
-    section(
-        "01",
-        "단가 점검 요약",
-        "선택한 출고월의 현황입니다. "
-        "단가 차이가 있는 출고부터 확인하세요.",
-    )
-
-    a, b, c, d = st.columns(4)
-
-    a.metric(
-        "전체 출고",
-        f"{len(monthly):,}건",
-        help="소계와 합계행을 제외한 출고 상세행 수입니다.",
-    )
-
-    b.metric(
-        "단가 차이 · 확인 필요",
-        f"{len(diff):,}건",
-        help=(
-            "허용 범위를 초과해 최신 기준단가와 "
-            "차이가 나는 출고입니다."
-        ),
-    )
-
-    missing_count = (
-        monthly["판정"]
-        .eq("기준단가 확인")
-        .sum()
-    )
-
-    c.metric(
-        "기준단가 · 확인 필요",
-        f"{missing_count:,}건",
-    )
-
-    d.metric(
-        "차이규모",
-        f"{diff['차이규모'].sum():,.1f}원",
-        help=(
-            "단가 차이 확인 건의 차액 절댓값 합계입니다. "
-            "확정 손실액은 아닙니다."
-        ),
-    )
-
     st.caption(
-        "비교 기준: 거래처 코드 + 품번 · "
-        "사용 중인 최신 판매단가와 비교합니다. "
-        "단가 차이는 확인 대상이며 실제 오류 여부는 "
-        "계약 조건과 적용기간을 확인해 판단하세요."
+        f"출고 파일: {batch['shipment_filename']} / "
+        f"기준단가 파일: {batch['price_filename']}"
     )
 
-    section(
-        "02",
-        "확인 우선순위",
-        "판정별 현황을 살펴보고, "
-        "차이규모가 큰 거래처부터 검토하세요.",
-    )
+    # 자동 판정과 추가 기준정보 주의사항을 함께 반영합니다.
+    attention = monthly[
+        monthly["판정"].ne("일치")
+        | monthly["기준정보주의"].fillna("").ne("")
+    ].copy()
 
-    left, right = st.columns(
-        [1, 1.15],
-        gap="large",
-    )
+    pending = attention[
+        attention["확인결과"].isin(
+            ["미확인", "확인 중"]
+        )
+    ]
 
-    with left:
-        with st.container(border=True):
-            st.subheader("판정별 출고 건수")
-            st.caption(
-                "파란색은 확인 대상 · 회색은 일치한 출고"
-            )
-            draw_judgments(monthly)
+    tabs = st.tabs([
+        "② 전체 현황 · 무엇이 문제인가요?",
+        "③ 출고 찾기 · 어떤 건을 볼까요?",
+        "④ 결과 기록 · 확인 후 저장하세요",
+    ])
 
-    with right:
-        with st.container(border=True):
-            st.subheader("거래처별 차이규모")
-            st.caption(
-                "단가 차이가 있는 거래처 · "
-                "금액이 큰 순서 · 최대 15개"
-            )
+    with tabs[0]:
+        section(
+            "02",
+            "무엇부터 확인하면 될까요?",
+            "단가 차이와 기준단가 누락을 먼저 확인하고, "
+            "조정·반품과 기준정보 주의사항을 따로 검토하세요.",
+        )
 
-            if (
-                "거래처명" in diff.columns
-                and not diff.empty
-            ):
-                group_cols = [
-                    col
-                    for col in ["코드", "거래처명"]
-                    if col in diff.columns
-                ]
+        a, b, c, d = st.columns(4)
 
-                ranking = (
-                    diff.groupby(
-                        group_cols,
-                        dropna=False,
-                    )
-                    .agg(
-                        확인건수=("차이규모", "size"),
-                        차이규모=("차이규모", "sum"),
-                    )
-                    .sort_values(
-                        "차이규모",
-                        ascending=False,
-                    )
-                    .head(15)
-                    .reset_index()
-                )
+        a.metric(
+            "전체 출고",
+            f"{len(monthly):,}건",
+            help="소계·합계를 제외한 출고 상세행 수입니다.",
+        )
 
-                ranking.insert(
-                    0,
-                    "순위",
-                    range(1, len(ranking) + 1),
-                )
-
-                ranking = ranking.rename(
-                    columns={
-                        "확인건수": "확인 건수",
-                        "차이규모": "차이규모(원)",
-                    }
-                )
-
-                st.dataframe(
-                    ranking.style.format({
-                        "확인 건수": "{:,.0f}",
-                        "차이규모(원)": "{:,.1f}",
-                    }),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=300,
-                )
-
-            else:
-                st.success(
-                    "선택한 출고월에는 단가 차이가 없습니다."
-                )
-
-    section(
-        "03",
-        "출고 상세 내역",
-        "판정·확인결과·검색어로 대상을 좁혀보세요. "
-        "현재 조회 결과는 엑셀로 내려받을 수 있습니다.",
-    )
-
-    with st.container(border=True):
-        p, r = st.columns(2)
-
-        judgments = p.multiselect(
-            "자동 판정 · 비워두면 전체",
-            JUDGMENTS,
-            default=(
-                ["단가차이 확인"]
-                if "단가차이 확인" in monthly["판정"].values
-                else []
+        b.metric(
+            "단가가 다른 출고",
+            f"{len(diff):,}건",
+            help=(
+                "최신 기준단가와 허용 범위를 초과해 "
+                "차이가 나는 출고입니다."
             ),
-            key=f"judgment_{selected}",
         )
 
-        review_filters = r.multiselect(
-            "확인결과 · 비워두면 전체",
-            ["미확인"] + STATUSES,
-            key=f"review_filter_{selected}",
+        missing_count = (
+            monthly["판정"]
+            .eq("기준단가 확인")
+            .sum()
         )
 
-        search = st.text_input(
-            "거래처명 · 코드 · 품번 · 품명 · 출고번호 검색",
-            placeholder="검색어를 입력하세요",
-            key=f"search_{selected}",
+        c.metric(
+            "기준단가를 못 찾은 출고",
+            f"{missing_count:,}건",
         )
 
-        view = monthly.copy()
+        d.metric(
+            "확인 전·확인 중",
+            f"{len(pending):,}건",
+            help=(
+                "자동 판정이 일치가 아니거나 "
+                "기준정보 주의사항이 있는 출고 중 "
+                "미확인·확인 중인 건입니다."
+            ),
+        )
 
-        if judgments:
+        if len(pending):
+            st.info(
+                "다음 할 일: ‘③ 출고 찾기’에서 "
+                f"{len(pending):,}건을 검토한 뒤, "
+                "‘④ 결과 기록’에서 확인결과를 저장하세요."
+            )
+        else:
+            st.success(
+                "현재 자료의 확인 대상에 "
+                "미확인·확인 중인 건이 없습니다. "
+                "필요한 내역은 ‘③ 출고 찾기’에서 조회하세요."
+            )
+
+        done = len(attention) - len(pending)
+
+        st.progress(
+            (
+                done / len(attention)
+                if len(attention)
+                else 1.0
+            ),
+            text=(
+                f"확인 기록 진행 · 확인 대상 "
+                f"{len(attention):,}건 중 "
+                f"결과 등록 {done:,}건"
+            ),
+        )
+
+        st.caption(
+            "‘정상·수정 필요·기준정보 수정 필요’로 기록하면 "
+            "결과 등록으로 집계합니다. "
+            "수정 완료를 의미하지는 않습니다."
+        )
+
+        left, right = st.columns(
+            [1, 1.15],
+            gap="large",
+        )
+
+        with left:
+            with st.container(border=True):
+                st.subheader("출고가 어떻게 분류됐나요?")
+                st.caption(
+                    "파란색: 별도 확인 대상 / 회색: 단가 일치"
+                )
+                draw_judgments(monthly)
+
+        with right:
+            with st.container(border=True):
+                st.subheader("어느 거래처부터 볼까요?")
+                st.caption(
+                    "단가 차이가 있는 거래처 · "
+                    "차이규모가 큰 순서 · 최대 15개"
+                )
+
+                if (
+                    "거래처명" in diff.columns
+                    and not diff.empty
+                ):
+                    groups = [
+                        col
+                        for col in ["코드", "거래처명"]
+                        if col in diff.columns
+                    ]
+
+                    ranking = (
+                        diff.groupby(
+                            groups,
+                            dropna=False,
+                        )
+                        .agg(
+                            확인건수=("차이규모", "size"),
+                            차이규모=("차이규모", "sum"),
+                        )
+                        .sort_values(
+                            "차이규모",
+                            ascending=False,
+                        )
+                        .head(15)
+                        .reset_index()
+                    )
+
+                    ranking.insert(
+                        0,
+                        "순위",
+                        range(1, len(ranking) + 1),
+                    )
+
+                    ranking = ranking.rename(
+                        columns={
+                            "확인건수": "확인 건수",
+                            "차이규모": "차이규모(원)",
+                        }
+                    )
+
+                    st.dataframe(
+                        ranking.style.format({
+                            "확인 건수": "{:,.0f}",
+                            "차이규모(원)": "{:,.1f}",
+                        }),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=300,
+                    )
+
+                else:
+                    st.success(
+                        "단가 차이가 있는 출고가 없습니다."
+                    )
+
+        st.caption(
+            "단가 차이규모 합계 "
+            f"{diff['차이규모'].sum():,.1f}원 · "
+            "최신 기준단가 대비 차액의 절댓값 합계이며 "
+            "확정 손실액은 아닙니다."
+        )
+
+        with st.expander("판정 용어가 궁금해요"):
+            st.markdown(
+                """
+**단가차이 확인**  
+최신 기준단가와 출고단가가 다릅니다.
+
+**기준단가 확인**  
+코드·품번에 맞는 사용 중인 단가가 없습니다.
+
+**데이터 확인**  
+출고수량 또는 단가가 없거나 숫자로 읽히지 않습니다.
+
+**조정·반품 확인**  
+출고수량이 0 이하입니다.
+
+**기준정보 주의**  
+기준단가 1원 이하, 적용기간 역전 등 추가 점검사항입니다.
+                """
+            )
+
+    with tabs[1]:
+        section(
+            "03",
+            "확인할 출고를 찾으세요",
+            "조회 범위를 고르고 거래처나 품번을 검색하세요. "
+            "표에서 내역을 확인한 뒤 ‘④ 결과 기록’으로 이동하세요.",
+        )
+
+        with st.container(border=True):
+            scope = st.radio(
+                "① 어떤 내역을 볼까요?",
+                [
+                    "확인이 필요한 전체",
+                    "단가 차이만",
+                    "기준단가 없는 건",
+                    "전체 출고",
+                ],
+                horizontal=True,
+                key=f"scope_{selected}",
+            )
+
+            a, b = st.columns(2)
+
+            status_filters = a.multiselect(
+                "② 처리 상태 · 비워두면 전체",
+                ["미확인"] + STATUSES,
+                key=f"status_{selected}",
+            )
+
+            search = b.text_input(
+                "③ 거래처·품번·품명·출고번호 검색",
+                placeholder="예: 거래처명 또는 002005",
+                key=f"search_{selected}",
+            )
+
+        if scope == "단가 차이만":
+            view = diff.copy()
+
+        elif scope == "기준단가 없는 건":
+            view = monthly[
+                monthly["판정"].eq("기준단가 확인")
+            ].copy()
+
+        elif scope == "전체 출고":
+            view = monthly.copy()
+
+        else:
+            view = attention.copy()
+
+        if status_filters:
             view = view[
-                view["판정"].isin(judgments)
-            ]
-
-        if review_filters:
-            view = view[
-                view["확인결과"].isin(review_filters)
+                view["확인결과"].isin(status_filters)
             ]
 
         if search:
-            matches = pd.Series(
+            mask = pd.Series(
                 False,
                 index=view.index,
             )
 
             for col in [
-                "거래처명", "코드", "품번",
+                "코드", "거래처명", "품번",
                 "품명", "출고번호",
             ]:
                 if col in view.columns:
-                    matches |= (
+                    mask |= (
                         view[col]
                         .astype(str)
                         .str.contains(
@@ -1169,7 +1285,7 @@ def main():
                         )
                     )
 
-            view = view[matches]
+            view = view[mask]
 
         view = view.sort_values(
             "차이규모",
@@ -1177,46 +1293,54 @@ def main():
             na_position="last",
         )
 
-        preferred = [
+        st.subheader(
+            f"조회 결과 · {len(view):,}건"
+        )
+
+        st.caption(
+            "표는 좌우로 이동할 수 있습니다. "
+            "단가 차이의 양수(+)는 기준보다 높게, "
+            "음수(-)는 낮게 출고됐다는 뜻입니다."
+        )
+
+        cols = [
+            "확인결과",
+            "판정",
+            "거래처명",
+            "품명",
+            "규격",
+            "품번",
             "출고일자",
             "출고번호",
             "순번",
-            "코드",
-            "거래처명",
-            "품번",
-            "품명",
-            "규격",
             "출고수량",
             "단가",
             "기준단가",
             "단가차이",
             "차이금액",
             "차이규모",
-            "판정",
             "기준정보주의",
-            "확인결과",
             "확인사유",
             "담당자",
+            "코드",
         ]
 
-        visible = [
+        cols = [
             col
-            for col in preferred
+            for col in cols
             if col in view.columns
         ]
 
-        st.caption(
-            f"현재 조회 {len(view):,}건 · "
-            "금액은 소수 둘째 자리까지 표시하며 "
-            "원래 계산값은 유지합니다."
-        )
-
         st.dataframe(
-            format_table(view[visible]),
+            format_table(view[cols]),
             use_container_width=True,
             hide_index=True,
             height=440,
             column_config={
+                "판정": st.column_config.TextColumn(
+                    "자동 판정",
+                    width="medium",
+                ),
                 "거래처명": st.column_config.TextColumn(
                     "거래처명",
                     width="medium",
@@ -1225,12 +1349,8 @@ def main():
                     "품명",
                     width="medium",
                 ),
-                "판정": st.column_config.TextColumn(
-                    "자동 판정",
-                    width="medium",
-                ),
                 "기준정보주의": st.column_config.TextColumn(
-                    "기준정보 확인사항",
+                    "기준정보 주의사항",
                     width="large",
                 ),
                 "확인사유": st.column_config.TextColumn(
@@ -1245,7 +1365,7 @@ def main():
         ).strftime("%Y%m%d")
 
         st.download_button(
-            "조회 결과 엑셀 다운로드",
+            "조회한 내역 엑셀로 내려받기",
             export_excel(view),
             file_name=(
                 f"출고단가_점검결과_{export_date}.xlsx"
@@ -1256,148 +1376,20 @@ def main():
             ),
         )
 
-    section(
-        "04",
-        "확인 결과 기록",
-        "출고를 선택하고 확인결과·사유·담당자를 남기세요. "
-        "저장한 기록은 팀원에게 공유됩니다.",
-    )
-
-    st.caption(
-        "담당자는 직접 입력합니다. "
-        "같은 출고를 여러 사람이 수정하면 "
-        "마지막으로 저장한 내용이 반영됩니다."
-    )
-
-    if view.empty:
         st.info(
-            "현재 조건에 해당하는 출고가 없습니다. "
-            "위의 검색 조건을 변경해 주세요."
+            "다음 할 일: ‘④ 결과 기록’ 탭을 누르세요. "
+            "지금 조회한 출고 중에서 기록할 건을 "
+            "선택할 수 있습니다."
         )
 
-    else:
-        row_map = {
-            row["행키"]: row
-            for row in view.to_dict("records")
-        }
-
-        def row_label(key):
-            row = row_map[key]
-
-            return (
-                f"{row.get('거래처명', '')} · "
-                f"{row.get('품명', '')} · "
-                f"{row.get('출고번호', '')} / "
-                f"{row.get('순번', '')} · "
-                f"{row.get('품번', '')}"
-            )
-
-        row_key = st.selectbox(
-            "기록할 출고",
-            list(row_map),
-            format_func=row_label,
-            key=f"row_{selected}",
+    with tabs[2]:
+        section(
+            "04",
+            "확인한 내용을 저장하세요",
+            "‘③ 출고 찾기’의 조회 결과와 연결됩니다. "
+            "출고 선택 → 단가 확인 → 결과 입력 → 저장 "
+            "순서로 진행하세요.",
         )
-
-        row = row_map[row_key]
-
-        with st.container(border=True):
-            x, y, z = st.columns(3)
-
-            x.metric(
-                "출고단가",
-                (
-                    "—"
-                    if pd.isna(row.get("단가"))
-                    else f"{row['단가']:,.2f}원"
-                ),
-            )
-
-            y.metric(
-                "기준단가",
-                (
-                    "—"
-                    if pd.isna(row.get("기준단가"))
-                    else f"{row['기준단가']:,.2f}원"
-                ),
-            )
-
-            z.metric(
-                "단가 차이",
-                (
-                    "—"
-                    if pd.isna(row.get("단가차이"))
-                    else f"{row['단가차이']:+,.2f}원"
-                ),
-            )
-
-            if row.get("기준정보주의"):
-                st.warning(
-                    "기준정보 확인사항: "
-                    f"{row['기준정보주의']}"
-                )
-
-        saved = review_map.get(row_key, {})
-
-        with st.form(
-            f"review_{selected}_{row_key}"
-        ):
-            l, r = st.columns(2)
-
-            status = l.selectbox(
-                "확인결과",
-                STATUSES,
-                index=STATUSES.index(
-                    saved.get("status", "확인 중")
-                ),
-            )
-
-            reviewer = r.text_input(
-                "담당자",
-                value=saved.get("reviewer", ""),
-                max_chars=100,
-                placeholder="이름 입력",
-            )
-
-            reason = st.text_area(
-                "확인사유",
-                value=saved.get("reason", ""),
-                max_chars=2000,
-                placeholder=(
-                    "예: 별도 계약단가 적용 확인 / "
-                    "출고단가 수정 요청"
-                ),
-                height=110,
-            )
-
-            if st.form_submit_button(
-                "확인 기록 저장 · 팀에 공유",
-                type="primary",
-            ):
-                try:
-                    (
-                        db.table("inspection_reviews")
-                        .upsert(
-                            {
-                                "batch_id": selected,
-                                "row_key": row_key,
-                                "status": status,
-                                "reason": reason,
-                                "reviewer": reviewer,
-                            },
-                            on_conflict="batch_id,row_key",
-                        )
-                        .execute()
-                    )
-
-                    st.session_state["review_saved"] = True
-                    st.rerun()
-
-                except Exception:
-                    st.error(
-                        "확인 기록을 저장하지 못했습니다. "
-                        "잠시 후 다시 시도해 주세요."
-                    )
 
         if st.session_state.pop(
             "review_saved",
@@ -1405,15 +1397,179 @@ def main():
         ):
             st.success(
                 "확인 기록을 저장했습니다. "
-                "조회표에도 반영됐습니다."
+                "다른 직원도 ‘최신 내용 불러오기’를 "
+                "누르면 확인할 수 있습니다."
+            )
+
+        if view.empty:
+            st.info(
+                "조회된 출고가 없습니다. "
+                "‘③ 출고 찾기’에서 조회 범위를 변경해 주세요."
+            )
+
+        else:
+            row_map = {
+                row["행키"]: row
+                for row in view.to_dict("records")
+            }
+
+            def row_label(key):
+                row = row_map[key]
+
+                return (
+                    f"[{row.get('확인결과', '미확인')}] "
+                    f"{row.get('거래처명', '')} · "
+                    f"{row.get('품명', '')} · "
+                    f"{row.get('출고번호', '')}/"
+                    f"{row.get('순번', '')} · "
+                    f"{row.get('품번', '')}"
+                )
+
+            row_key = st.selectbox(
+                "① 기록할 출고를 선택하세요",
+                list(row_map),
+                format_func=row_label,
+                key=f"row_{selected}",
+            )
+
+            row = row_map[row_key]
+
+            with st.container(border=True):
+                st.subheader(
+                    "② 이 출고의 단가를 확인하세요"
+                )
+
+                st.write(
+                    f"거래처: {row.get('거래처명', '')} / "
+                    f"품명: {row.get('품명', '')} / "
+                    f"품번: {row.get('품번', '')}"
+                )
+
+                st.caption(
+                    f"출고일자 {row.get('출고일자', '')} · "
+                    f"출고번호 {row.get('출고번호', '')} · "
+                    f"자동 판정: {row.get('판정', '')}"
+                )
+
+                a, b, c = st.columns(3)
+
+                for col, label, key in [
+                    (a, "실제 출고단가", "단가"),
+                    (b, "최신 기준단가", "기준단가"),
+                    (c, "단가 차이", "단가차이"),
+                ]:
+                    value = row.get(key)
+
+                    col.metric(
+                        label,
+                        (
+                            "—"
+                            if pd.isna(value)
+                            else f"{value:,.2f}원"
+                        ),
+                    )
+
+                if row.get("기준정보주의"):
+                    st.warning(
+                        "기준정보 주의: "
+                        f"{row['기준정보주의']}"
+                    )
+
+                st.caption(
+                    "최신 단가와 비교한 결과입니다. "
+                    "계약별 예외와 적용기간을 확인한 후 "
+                    "처리하세요."
+                )
+
+            saved = review_map.get(row_key, {})
+
+            with st.form(
+                f"review_{selected}_{row_key}"
+            ):
+                st.subheader(
+                    "③ 확인결과와 사유를 입력하세요"
+                )
+
+                a, b = st.columns(2)
+
+                status = a.selectbox(
+                    "확인결과",
+                    STATUSES,
+                    index=STATUSES.index(
+                        saved.get("status", "확인 중")
+                    ),
+                )
+
+                reviewer = b.text_input(
+                    "담당자",
+                    value=saved.get("reviewer", ""),
+                    max_chars=100,
+                    placeholder="이름 입력",
+                )
+
+                reason = st.text_area(
+                    "확인사유",
+                    value=saved.get("reason", ""),
+                    max_chars=2000,
+                    height=115,
+                    placeholder=(
+                        "예: 별도 계약단가 적용 확인 / "
+                        "출고단가 수정 요청"
+                    ),
+                )
+
+                st.caption(
+                    "정상: 계약 등 근거 확인 / "
+                    "수정 필요: 출고단가 수정 대상 / "
+                    "기준정보 수정 필요: 기준단가 등록 수정 대상"
+                )
+
+                if st.form_submit_button(
+                    "④ 확인 기록 저장하고 팀에 공유",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    try:
+                        (
+                            db.table("inspection_reviews")
+                            .upsert(
+                                {
+                                    "batch_id": selected,
+                                    "row_key": row_key,
+                                    "status": status,
+                                    "reason": reason,
+                                    "reviewer": reviewer,
+                                },
+                                on_conflict="batch_id,row_key",
+                            )
+                            .execute()
+                        )
+
+                        st.session_state[
+                            "review_saved"
+                        ] = True
+
+                        st.rerun()
+
+                    except Exception:
+                        st.error(
+                            "저장하지 못했습니다. "
+                            "잠시 후 다시 시도해 주세요."
+                        )
+
+            st.caption(
+                "같은 건을 여러 사람이 수정하면 "
+                "마지막 저장 내용이 반영됩니다. "
+                "확인결과를 저장해도 원본 엑셀이나 ERP 단가가 "
+                "자동 변경되지는 않습니다."
             )
 
     st.markdown(
         """
         <div class="footer">
-            출고 단가 관리 · 팀 공유 대시보드<br>
-            검증 결과는 등록 당시 기준단가를 기준으로 보관됩니다.
-            최신 기준으로 다시 비교하려면 두 파일을 새로 등록하세요.
+            출고 단가 점검 · 팀 공유 대시보드<br>
+            검증 자료는 등록 당시 기준으로 보관됩니다.
+            최신 단가로 다시 점검하려면 새 엑셀을 등록하세요.
         </div>
         """,
         unsafe_allow_html=True,
