@@ -1004,6 +1004,99 @@ def render_price_cards(diff, db, selected, review_map, month):
                 st.error("비고를 저장하지 못했습니다. 입력 내용은 유지되니 잠시 후 다시 저장해 주세요.")
 
 
+def confirmation_key(row_key):
+    return "confirm:v1:" + str(row_key)
+
+
+def confirmation_value(row_key, detailed_status, review_map):
+    record = review_map.get(confirmation_key(row_key))
+    if record and record.get("reason") in ["미확인", "확인"]:
+        return record["reason"]
+    return "확인" if detailed_status in ["정상", "수정 필요", "기준정보 수정 필요"] else "미확인"
+
+
+def confirmation_record(batch_id, row_key, value):
+    # 확인 여부는 별도 기록으로 보관하여 기존 처리결과와 사유를 보존합니다.
+    return {
+        "batch_id": batch_id,
+        "row_key": confirmation_key(row_key),
+        "status": "확인 중",
+        "reason": value,
+        "reviewer": "",
+    }
+
+
+def render_confirmation_editor(view, db, selected):
+    if st.session_state.pop("checks_saved", False):
+        st.success("확인 여부를 저장했습니다.")
+    if view.empty:
+        st.info("조회된 출고가 없습니다.")
+        return
+    cols = [
+        "확인결과", "코드", "거래처명", "품번", "품명", "판정",
+        "규격", "출고일자", "출고번호", "순번", "출고수량",
+        "단가", "기준단가", "단가차이", "차이금액", "차이규모",
+        "처리결과", "기준정보주의", "확인사유", "담당자",
+    ]
+    cols = [col for col in cols if col in view.columns]
+    source = view.set_index("행키")[cols].copy()
+    display = source.copy()
+    group_cols = [col for col in ["코드", "거래처명"] if col in display.columns]
+    if group_cols:
+        repeated = display.duplicated(group_cols)
+        display.loc[repeated, group_cols] = ""
+    snapshot = json.dumps(
+        list(zip(source.index.tolist(), source["확인결과"].tolist())),
+        ensure_ascii=False,
+    )
+    editor_key = f"shipment_checks_{selected}_" + hashlib.sha256(snapshot.encode()).hexdigest()[:16]
+    st.caption("거래처코드·거래처명은 묶음 첫 행에 표시합니다. 확인결과를 바꾼 뒤 저장하세요.")
+    config = {
+        "확인결과": st.column_config.SelectboxColumn(
+            "확인결과", options=["미확인", "확인"], required=True, width="small"
+        ),
+        "코드": st.column_config.TextColumn("거래처코드", width="small"),
+        "거래처명": st.column_config.TextColumn("거래처명", width="medium"),
+        "품번": st.column_config.TextColumn("품목코드", width="small"),
+        "품명": st.column_config.TextColumn("품목명", width="medium"),
+        "판정": st.column_config.TextColumn("자동 판정", width="medium"),
+        "처리결과": st.column_config.TextColumn("상세 처리결과", width="medium"),
+        "기준정보주의": st.column_config.TextColumn("기준정보 주의사항", width="large"),
+        "확인사유": st.column_config.TextColumn("확인사유", width="large"),
+    }
+    for col in ["출고수량", "단가", "기준단가", "단가차이", "차이금액", "차이규모"]:
+        config[col] = st.column_config.NumberColumn(col, format="%.2f")
+    with st.form(f"checks_form_{editor_key}"):
+        edited = st.data_editor(
+            display,
+            key=editor_key,
+            use_container_width=True,
+            hide_index=True,
+            height=480,
+            num_rows="fixed",
+            disabled=[col for col in cols if col != "확인결과"],
+            column_config=config,
+        )
+        submitted = st.form_submit_button("변경한 확인결과 저장", type="primary")
+    if submitted:
+        updates = []
+        for key, row in edited.iterrows():
+            value = row["확인결과"]
+            if value in ["미확인", "확인"] and value != source.loc[key, "확인결과"]:
+                updates.append(confirmation_record(selected, key, value))
+        if not updates:
+            st.info("변경된 확인결과가 없습니다.")
+        else:
+            try:
+                db.table("inspection_reviews").upsert(
+                    updates, on_conflict="batch_id,row_key"
+                ).execute()
+                st.session_state["checks_saved"] = True
+                st.rerun()
+            except Exception:
+                st.error("저장하지 못했습니다. 다시 시도해 주세요.")
+
+
 def main():
     st.set_page_config(
         page_title="출고 단가 점검",
@@ -1201,6 +1294,12 @@ def main():
             )
         )
 
+    data["처리결과"] = data["확인결과"]
+    data["확인결과"] = [
+        confirmation_value(key, status, review_map)
+        for key, status in zip(data["행키"], data["처리결과"])
+    ]
+
     month = st.selectbox(
         "확인할 출고월 · 아래 모든 화면에 적용",
         ["전체"]
@@ -1325,7 +1424,7 @@ def main():
 
             status_filters = a.multiselect(
                 "② 처리 상태 · 비워두면 전체",
-                ["미확인"] + STATUSES,
+                ["미확인", "확인"],
                 key=f"status_{selected}",
             )
 
@@ -1378,78 +1477,14 @@ def main():
 
             view = view[mask]
 
-        view = view.sort_values(
-            "차이규모",
-            ascending=False,
-            na_position="last",
-        )
-
-        st.subheader(
-            f"조회 결과 · {len(view):,}건"
-        )
-
-        st.caption(
-            "표는 좌우로 이동할 수 있습니다. "
-            "단가 차이의 양수(+)는 기준보다 높게, "
-            "음수(-)는 낮게 출고됐다는 뜻입니다."
-        )
-
-        cols = [
-            "확인결과",
-            "판정",
-            "거래처명",
-            "품명",
-            "규격",
-            "품번",
-            "출고일자",
-            "출고번호",
-            "순번",
-            "출고수량",
-            "단가",
-            "기준단가",
-            "단가차이",
-            "차이금액",
-            "차이규모",
-            "기준정보주의",
-            "확인사유",
-            "담당자",
-            "코드",
-        ]
-
-        cols = [
-            col
-            for col in cols
+        sort_cols = [
+            col for col in ["코드", "거래처명", "품번", "출고일자", "출고번호", "순번"]
             if col in view.columns
         ]
-
-        st.dataframe(
-            format_table(view[cols]),
-            use_container_width=True,
-            hide_index=True,
-            height=440,
-            column_config={
-                "판정": st.column_config.TextColumn(
-                    "자동 판정",
-                    width="medium",
-                ),
-                "거래처명": st.column_config.TextColumn(
-                    "거래처명",
-                    width="medium",
-                ),
-                "품명": st.column_config.TextColumn(
-                    "품명",
-                    width="medium",
-                ),
-                "기준정보주의": st.column_config.TextColumn(
-                    "기준정보 주의사항",
-                    width="large",
-                ),
-                "확인사유": st.column_config.TextColumn(
-                    "확인사유",
-                    width="large",
-                ),
-            },
-        )
+        if sort_cols:
+            view = view.sort_values(sort_cols, kind="stable", na_position="last")
+        st.subheader(f"조회 결과 · {len(view):,}건")
+        render_confirmation_editor(view, db, selected)
 
         export_date = datetime.now(
             ZoneInfo("Asia/Seoul")
@@ -1457,7 +1492,7 @@ def main():
 
         st.download_button(
             "조회한 내역 엑셀로 내려받기",
-            export_excel(view),
+            export_excel(view.rename(columns={"코드": "거래처코드", "품번": "품목코드", "품명": "품목명"})),
             file_name=(
                 f"출고단가_점검결과_{export_date}.xlsx"
             ),
@@ -1584,7 +1619,7 @@ def main():
                 a, b = st.columns(2)
 
                 status = a.selectbox(
-                    "확인결과",
+                    "상세 처리결과",
                     STATUSES,
                     index=STATUSES.index(
                         saved.get("status", "확인 중")
@@ -1624,13 +1659,18 @@ def main():
                         (
                             db.table("inspection_reviews")
                             .upsert(
-                                {
+                                [{
                                     "batch_id": selected,
                                     "row_key": row_key,
                                     "status": status,
                                     "reason": reason,
                                     "reviewer": reviewer,
                                 },
+                                confirmation_record(
+                                    selected, row_key,
+                                    "미확인" if status == "확인 중" else "확인",
+                                ),
+                                ],
                                 on_conflict="batch_id,row_key",
                             )
                             .execute()
