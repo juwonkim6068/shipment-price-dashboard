@@ -1121,9 +1121,9 @@ def main():
 
         with right:
             with st.container(border=True):
-                st.subheader("어느 거래처부터 볼까요?")
+                              st.subheader("어느 거래처·품목부터 볼까요?")
                 st.caption(
-                    "단가 차이가 있는 거래처 · "
+                    "거래처·품목별 단가 차이 · "
                     "차이규모가 큰 순서 · 최대 15개"
                 )
 
@@ -1133,7 +1133,12 @@ def main():
                 ):
                     groups = [
                         col
-                        for col in ["코드", "거래처명"]
+                        for col in [
+                            "코드",
+                            "거래처명",
+                            "품번",
+                            "품명",
+                        ]
                         if col in diff.columns
                     ]
 
@@ -1154,32 +1159,67 @@ def main():
                         .reset_index()
                     )
 
+                    ranking = ranking.rename(
+                        columns={
+                            "코드": "거래처코드",
+                            "품번": "품목코드",
+                            "품명": "품목",
+                            "확인건수": "확인 건수",
+                            "차이규모": "차이규모(원)",
+                        }
+                    )
+
                     ranking.insert(
                         0,
                         "순위",
                         range(1, len(ranking) + 1),
                     )
 
-                    ranking = ranking.rename(
-                        columns={
-                            "확인건수": "확인 건수",
-                            "차이규모": "차이규모(원)",
-                        }
-                    )
+                    display_columns = [
+                        col
+                        for col in [
+                            "순위",
+                            "거래처명",
+                            "품목코드",
+                            "품목",
+                            "확인 건수",
+                            "차이규모(원)",
+                        ]
+                        if col in ranking.columns
+                    ]
 
                     st.dataframe(
-                        ranking.style.format({
+                        ranking[display_columns].style.format({
                             "확인 건수": "{:,.0f}",
                             "차이규모(원)": "{:,.1f}",
                         }),
                         use_container_width=True,
                         hide_index=True,
-                        height=300,
+                        height=360,
+                        column_config={
+                            "순위": st.column_config.NumberColumn(
+                                "순위",
+                                width="small",
+                            ),
+                            "거래처명": st.column_config.TextColumn(
+                                "거래처명",
+                                width="medium",
+                            ),
+                            "품목코드": st.column_config.TextColumn(
+                                "품목코드",
+                                width="small",
+                            ),
+                            "품목": st.column_config.TextColumn(
+                                "품목",
+                                width="medium",
+                            ),
+                        },
                     )
 
                 else:
                     st.success(
                         "단가 차이가 있는 출고가 없습니다."
+                    )
                     )
 
         st.caption(
