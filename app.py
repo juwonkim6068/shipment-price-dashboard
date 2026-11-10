@@ -280,6 +280,15 @@ button[kind="primaryFormSubmit"]:hover {
         font-size: 12px;
     }
 }
+
+.price-card-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px 24px;padding:10px 4px 8px}
+.price-field {display:flex;flex-direction:column;gap:7px;min-width:0}
+.price-label {font-size:11px;color:#7b889c;font-weight:500;letter-spacing:.01em}
+.price-value {font-size:15px;color:#172b46;font-weight:650;line-height:1.5;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.price-emphasis {color:#bf571c;font-weight:750}
+@media(min-width:1400px){.price-card-grid{grid-template-columns:1fr 1.8fr 1fr 1.5fr}.price-field:nth-child(n+5){padding-top:10px;border-top:1px solid #edf1f6}}
+@media(max-width:700px){.price-card-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.price-value{font-size:14px}}
+
 </style>
 """
 
@@ -787,6 +796,146 @@ def render_upload(db):
                     )
 
 
+def build_price_cards(diff):
+    """기준단가·출고단가가 다른 내역은 같은 품목이어도 분리합니다."""
+    if diff.empty:
+        return pd.DataFrame()
+    frame = diff.copy()
+    group_cols = ["코드", "거래처명", "품번", "품명", "기준단가", "단가"]
+    for col in ["코드", "거래처명", "품번", "품명"]:
+        if col not in frame.columns:
+            frame[col] = ""
+        frame[col] = frame[col].fillna("").astype(str)
+    cards = (
+        frame.groupby(group_cols, dropna=False)
+        .agg(차이규모=("차이규모", "sum"), 출고건수=("행키", "size"))
+        .reset_index()
+        .sort_values("차이규모", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    def note_key(row):
+        values = [str(row[col]) for col in group_cols[:4]]
+        values += [format(float(row[col]), ".15g") for col in group_cols[4:]]
+        identity = json.dumps(values, ensure_ascii=False, separators=(",", ":"))
+        return "price-note:v1:" + hashlib.sha256(identity.encode()).hexdigest()
+
+    cards["비고키"] = cards.apply(note_key, axis=1)
+    return cards
+
+
+def render_price_cards(diff, db, selected, review_map, month):
+    from html import escape
+    import math
+
+    st.subheader("거래처·품목별 단가 확인")
+    st.caption(
+        "거래처와 품목별로 기준단가·실제 출고단가를 비교하세요. "
+        "오른쪽 비고에 바로 입력한 뒤 ‘비고 저장’을 누르면 팀원과 공유됩니다."
+    )
+    if st.session_state.pop("price_note_saved", False):
+        st.success("비고를 저장했습니다. 다른 직원은 ‘최신 내용 불러오기’로 확인할 수 있습니다.")
+    cards = build_price_cards(diff)
+    if cards.empty:
+        st.success("선택한 출고월에는 단가 차이가 있는 출고가 없습니다.")
+        return
+    find_col, size_col = st.columns([4, 1])
+    search = find_col.text_input(
+        "거래처·품목 검색",
+        placeholder="거래처코드, 거래처명, 품목코드, 품목명 입력",
+        key=f"card_search_{selected}",
+    )
+    page_size = size_col.selectbox(
+        "한 번에 보기", [10, 20, 50], key=f"card_size_{selected}"
+    )
+    if search.strip():
+        mask = pd.Series(False, index=cards.index)
+        for col in ["코드", "거래처명", "품번", "품명"]:
+            mask |= cards[col].str.contains(search.strip(), case=False, regex=False, na=False)
+        cards = cards[mask].reset_index(drop=True)
+    st.caption(
+        f"조회 {len(cards):,}개 항목 · 같은 품목이라도 출고단가가 다르면 별도로 표시합니다. "
+        "비고는 현재 등록 자료의 거래처·품목·기준단가·출고단가 조합별로 저장됩니다."
+    )
+    if cards.empty:
+        st.info("검색 결과가 없습니다. 검색어를 변경해 주세요.")
+        return
+    page_count = math.ceil(len(cards) / page_size)
+    page_options = list(range(1, page_count + 1))
+    page = st.selectbox(
+        "페이지", page_options,
+        format_func=lambda value: f"{value} / {page_count} 페이지",
+        key=f"card_page_{selected}_{month}_{page_size}_{hashlib.sha256(search.encode()).hexdigest()[:10]}",
+    )
+    visible = cards.iloc[(page - 1) * page_size:page * page_size]
+    page_snapshot = [(key, review_map.get(key, {}).get("reason", ""), review_map.get(key, {}).get("updated_at", "")) for key in visible["비고키"]]
+    page_identity = hashlib.sha256(json.dumps(page_snapshot, ensure_ascii=False).encode()).hexdigest()[:16]
+    st.caption("입력 후 저장하지 않고 페이지·검색·월을 바꾸면 입력 내용이 사라질 수 있습니다. 먼저 비고를 저장하세요.")
+    with st.form(f"price_notes_{selected}_{page_identity}"):
+        edits = []
+        for row in visible.to_dict("records"):
+            key = row["비고키"]
+            saved = review_map.get(key, {})
+            with st.container(border=True):
+                details, note = st.columns([2.8, 1.2], gap="medium")
+                fields = [
+                    ("거래처코드", row["코드"]),
+                    ("거래처명", row["거래처명"]),
+                    ("품목코드", row["품번"]),
+                    ("품목명", row["품명"]),
+                    ("기준단가", f"{row['기준단가']:,.2f}원"),
+                    ("출고단가", f"{row['단가']:,.2f}원"),
+                    ("차이규모", f"{row['차이규모']:,.1f}원"),
+                ]
+                fields_html = "".join(
+                    '<div class="price-field"><span class="price-label">'
+                    + escape(label)
+                    + '</span><span class="price-value '
+                    + ("price-emphasis" if label == "차이규모" else "")
+                    + '">'
+                    + escape(str(value))
+                    + '</span></div>'
+                    for label, value in fields
+                )
+                with details:
+                    st.markdown(
+                        '<div class="price-card-grid">' + fields_html + '</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"출고 상세 {row['출고건수']:,}건 합산")
+                with note:
+                    text = st.text_area(
+                        "비고", value=saved.get("reason", ""),
+                        placeholder="이 품목의 확인 내용이나 요청사항 입력",
+                        height=100, max_chars=2000,
+                        key=f"price_note_{selected}_{key}_{page_identity}",
+                    )
+                    if text != saved.get("reason", ""):
+                        edits.append({
+                            "batch_id": selected,
+                            "row_key": key,
+                            "status": "확인 중",
+                            "reason": text,
+                            "reviewer": "",
+                        })
+        submitted = st.form_submit_button(
+            "입력한 비고 저장 · 팀과 공유", type="primary", use_container_width=True
+        )
+    if submitted:
+        if not edits:
+            st.info("변경된 비고가 없습니다.")
+        else:
+            try:
+                db.table("inspection_reviews").upsert(
+                    edits, on_conflict="batch_id,row_key"
+                ).execute()
+                st.session_state["price_note_saved"] = True
+                st.rerun()
+            except Exception:
+                st.error("비고를 저장하지 못했습니다. 입력 내용은 유지되니 잠시 후 다시 저장해 주세요.")
+    st.caption("카드별 비고는 출고별 확인결과·사유와 별도입니다. 같은 비고를 동시에 수정하면 마지막 저장 내용이 반영됩니다.")
+
+
 def main():
     st.set_page_config(
         page_title="출고 단가 점검",
@@ -1106,147 +1255,13 @@ def main():
             "수정 완료를 의미하지는 않습니다."
         )
 
-        left, right = st.columns(
-            [1, 1.15],
-            gap="large",
-        )
-
-        with left:
-            with st.container(border=True):
-                st.subheader("출고가 어떻게 분류됐나요?")
-                st.caption(
-                    "파란색: 별도 확인 대상 / 회색: 단가 일치"
-                )
-                draw_judgments(monthly)
-
-        with right:
-            with st.container(border=True):
-                st.subheader("어느 거래처·품목부터 볼까요?")
-                st.caption(
-                    "거래처·품목별 단가 차이 · "
-                    "차이규모가 큰 순서 · 최대 15개"
-                )
-
-                if (
-                    "거래처명" in diff.columns
-                    and not diff.empty
-                ):
-                    groups = [
-                        col
-                        for col in [
-                            "코드",
-                            "거래처명",
-                            "품번",
-                            "품명",
-                        ]
-                        if col in diff.columns
-                    ]
-
-                    ranking = (
-                        diff.groupby(
-                            groups,
-                            dropna=False,
-                        )
-                        .agg(
-                            확인건수=("차이규모", "size"),
-                            차이규모=("차이규모", "sum"),
-                        )
-                        .sort_values(
-                            "차이규모",
-                            ascending=False,
-                        )
-                        .head(15)
-                        .reset_index()
-                    )
-
-                    ranking = ranking.rename(
-                        columns={
-                            "코드": "거래처코드",
-                            "품번": "품목코드",
-                            "품명": "품목",
-                            "확인건수": "확인 건수",
-                            "차이규모": "차이규모(원)",
-                        }
-                    )
-
-                    ranking.insert(
-                        0,
-                        "순위",
-                        range(1, len(ranking) + 1),
-                    )
-
-                    display_columns = [
-                        col
-                        for col in [
-                            "순위",
-                            "거래처명",
-                            "품목코드",
-                            "품목",
-                            "확인 건수",
-                            "차이규모(원)",
-                        ]
-                        if col in ranking.columns
-                    ]
-
-                    st.dataframe(
-                        ranking[display_columns].style.format({
-                            "확인 건수": "{:,.0f}",
-                            "차이규모(원)": "{:,.1f}",
-                        }),
-                        use_container_width=True,
-                        hide_index=True,
-                        height=360,
-                        column_config={
-                            "순위": st.column_config.NumberColumn(
-                                "순위",
-                                width="small",
-                            ),
-                            "거래처명": st.column_config.TextColumn(
-                                "거래처명",
-                                width="medium",
-                            ),
-                            "품목코드": st.column_config.TextColumn(
-                                "품목코드",
-                                width="small",
-                            ),
-                            "품목": st.column_config.TextColumn(
-                                "품목",
-                                width="medium",
-                            ),
-                        },
-                    )
-
-                else:
-                    st.success(
-                        "단가 차이가 있는 출고가 없습니다."
-                    )
+        render_price_cards(diff, db, selected, review_map, month)
 
         st.caption(
             "단가 차이규모 합계 "
             f"{diff['차이규모'].sum():,.1f}원 · "
-            "최신 기준단가 대비 차액의 절댓값 합계이며 "
-            "확정 손실액은 아닙니다."
+            "최신 기준단가 대비 차액의 절댓값 합계이며 확정 손실액은 아닙니다."
         )
-
-        with st.expander("판정 용어가 궁금해요"):
-            st.markdown(
-                """
-**단가차이 확인**  
-최신 기준단가와 출고단가가 다릅니다.
-
-**기준단가 확인**  
-코드·품번에 맞는 사용 중인 단가가 없습니다.
-
-**데이터 확인**  
-출고수량 또는 단가가 없거나 숫자로 읽히지 않습니다.
-
-**조정·반품 확인**  
-출고수량이 0 이하입니다.
-
-**기준정보 주의**  
-기준단가 1원 이하, 적용기간 역전 등 추가 점검사항입니다.
-                """
-            )
 
     with tabs[1]:
         section(
