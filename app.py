@@ -300,6 +300,10 @@ button[kind="primaryFormSubmit"]:hover {
 @media(max-width:600px){.shipment-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.shipment-detail{padding:16px}}
 
 .section-description:empty {display:none;}
+
+[data-testid="stColumn"] [data-testid="stForm"] {padding:0 !important;border:0 !important;background:transparent;}
+.shipment-details-gap {height:14px;border-top:1px solid #edf1f6;margin-top:10px;}
+
 </style>
 """
 
@@ -902,8 +906,7 @@ def render_price_cards(diff, db, selected, review_map, month):
     import math
 
     st.subheader("거래처·품목별 단가 확인")
-    if st.session_state.pop("price_note_saved", False):
-        st.success("비고를 저장했습니다.")
+    saved_note_key = st.session_state.pop("price_note_saved", None)
     cards = build_price_cards(diff)
     if cards.empty:
         st.success("선택한 출고월에는 단가 차이가 있는 출고가 없습니다.")
@@ -937,71 +940,75 @@ def render_price_cards(diff, db, selected, review_map, month):
     else:
         page = 1
     visible = cards.iloc[(page - 1) * page_size:page * page_size]
-    page_snapshot = [(key, review_map.get(key, {}).get("reason", ""), review_map.get(key, {}).get("updated_at", "")) for key in visible["비고키"]]
-    page_identity = hashlib.sha256(json.dumps(page_snapshot, ensure_ascii=False).encode()).hexdigest()[:16]
-    with st.form(f"price_notes_{selected}_{page_identity}"):
-        edits = []
-        for row in visible.to_dict("records"):
-            key = row["비고키"]
-            saved = review_map.get(key, {})
-            with st.container(border=True):
-                details, note = st.columns([2.8, 1.2], gap="medium")
-                fields = [
-                    ("거래처코드", row["코드"]),
-                    ("거래처명", row["거래처명"]),
-                    ("품목코드", row["품번"]),
-                    ("품목명", row["품명"]),
-                    ("기준단가", f"{row['기준단가']:,.2f}원"),
-                    ("출고단가", f"{row['단가']:,.2f}원"),
-                    ("차이규모", f"{row['차이규모']:,.1f}원"),
-                ]
-                fields_html = "".join(
-                    '<div class="price-field"><span class="price-label">'
-                    + escape(label)
-                    + '</span><span class="price-value '
-                    + ("price-emphasis" if label == "차이규모" else "")
-                    + '">'
-                    + escape(str(value))
-                    + '</span></div>'
-                    for label, value in fields
+    for row in visible.to_dict("records"):
+        key = row["비고키"]
+        saved = review_map.get(key, {})
+        revision = hashlib.sha256(
+            json.dumps(
+                [saved.get("reason", ""), saved.get("updated_at", "")],
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()[:12]
+        with st.container(border=True):
+            details, note = st.columns([2.8, 1.2], gap="medium", vertical_alignment="top")
+            fields = [
+                ("거래처코드", row["코드"]),
+                ("거래처명", row["거래처명"]),
+                ("품목코드", row["품번"]),
+                ("품목명", row["품명"]),
+                ("기준단가", f"{row['기준단가']:,.2f}원"),
+                ("출고단가", f"{row['단가']:,.2f}원"),
+                ("차이규모", f"{row['차이규모']:,.1f}원"),
+            ]
+            fields_html = "".join(
+                '<div class="price-field"><span class="price-label">'
+                + escape(label)
+                + '</span><span class="price-value '
+                + ("price-emphasis" if label == "차이규모" else "")
+                + '">'
+                + escape(str(value))
+                + '</span></div>'
+                for label, value in fields
+            )
+            with details:
+                st.markdown(
+                    '<div class="price-card-grid">' + fields_html + '</div>',
+                    unsafe_allow_html=True,
                 )
-                with details:
-                    st.markdown(
-                        '<div class="price-card-grid">' + fields_html + '</div>',
-                        unsafe_allow_html=True,
-                    )
-                with note:
+            with note:
+                with st.form(f"card_note_{selected}_{key}_{revision}", border=False):
                     text = st.text_area(
                         "비고", value=saved.get("reason", ""),
-                        placeholder="이 품목의 확인 내용이나 요청사항 입력",
-                        height=100, max_chars=2000,
-                        key=f"price_note_{selected}_{key}_{page_identity}",
+                        placeholder="확인완료 / 의견 등을 입력하세요",
+                        height=90, max_chars=2000,
+                        key=f"price_note_{selected}_{key}_{revision}",
                     )
-                    if text != saved.get("reason", ""):
-                        edits.append({
-                            "batch_id": selected,
-                            "row_key": key,
-                            "status": "확인 중",
-                            "reason": text,
-                            "reviewer": "",
-                        })
-                render_card_shipments(diff, row)
-        st.caption("페이지·검색·월 변경 전 비고를 저장하세요.")
-        submitted = st.form_submit_button(
-            "입력한 비고 저장 · 팀과 공유", type="primary", use_container_width=True
-        )
-    if submitted:
-        if not edits:
-            st.info("변경된 비고가 없습니다.")
-        else:
-            try:
-                db.table("inspection_reviews").upsert(
-                    edits, on_conflict="batch_id,row_key"
-                ).execute()
-                st.session_state["price_note_saved"] = True
-                st.rerun()
-            except Exception:
-                st.error("비고를 저장하지 못했습니다. 입력 내용은 유지되니 잠시 후 다시 저장해 주세요.")
+                    submitted = st.form_submit_button(
+                        "비고 저장", type="primary", use_container_width=True
+                    )
+                if submitted:
+                    if text == saved.get("reason", ""):
+                        st.caption("변경된 내용이 없습니다.")
+                    else:
+                        try:
+                            db.table("inspection_reviews").upsert(
+                                {
+                                    "batch_id": selected,
+                                    "row_key": key,
+                                    "status": "확인 중",
+                                    "reason": text,
+                                    "reviewer": "",
+                                },
+                                on_conflict="batch_id,row_key",
+                            ).execute()
+                            st.session_state["price_note_saved"] = key
+                            st.rerun()
+                        except Exception:
+                            st.error("저장하지 못했습니다. 다시 시도해 주세요.")
+                if saved_note_key == key:
+                    st.success("저장 완료")
+            st.markdown('<div class="shipment-details-gap"></div>', unsafe_allow_html=True)
+            render_card_shipments(diff, row)
 
 
 def confirmation_key(row_key):
