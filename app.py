@@ -160,18 +160,20 @@ h3 {
     background: white;
     border: 1px solid #E1E7F0;
     border-radius: 14px;
-    padding: 20px;
-    min-height: 128px;
+    padding: 12px 16px;
+    min-height: 84px;
     box-shadow: 0 3px 12px #172B4605;
 }
 
 [data-testid="stMetricLabel"] {
     color: #718096;
-    font-size: 13px;
+    font-size: 12px;
 }
+[data-testid="stMetricLabel"] p {font-size:12px !important;}
+
 
 [data-testid="stMetricValue"] {
-    font-size: clamp(24px,2.5vw,34px);
+    font-size: clamp(21px,1.8vw,26px);
     font-weight: 700;
     color: #172B46;
     letter-spacing: -.05em;
@@ -271,8 +273,8 @@ button[kind="primaryFormSubmit"]:hover {
     }
 
     [data-testid="stMetric"] {
-        min-height: 105px;
-        padding: 16px;
+        min-height: 76px;
+        padding: 10px 12px;
     }
 
     [data-baseweb="tab"] {
@@ -297,6 +299,7 @@ button[kind="primaryFormSubmit"]:hover {
 @media(max-width:900px){.shipment-detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){.shipment-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.shipment-detail{padding:16px}}
 
+.section-description:empty {display:none;}
 </style>
 """
 
@@ -899,12 +902,8 @@ def render_price_cards(diff, db, selected, review_map, month):
     import math
 
     st.subheader("거래처·품목별 단가 확인")
-    st.caption(
-        "거래처와 품목별로 기준단가·실제 출고단가를 비교하세요. "
-        "오른쪽 비고에 바로 입력한 뒤 ‘비고 저장’을 누르면 팀원과 공유됩니다."
-    )
     if st.session_state.pop("price_note_saved", False):
-        st.success("비고를 저장했습니다. 다른 직원은 ‘최신 내용 불러오기’로 확인할 수 있습니다.")
+        st.success("비고를 저장했습니다.")
     cards = build_price_cards(diff)
     if cards.empty:
         st.success("선택한 출고월에는 단가 차이가 있는 출고가 없습니다.")
@@ -923,24 +922,23 @@ def render_price_cards(diff, db, selected, review_map, month):
         for col in ["코드", "거래처명", "품번", "품명"]:
             mask |= cards[col].str.contains(search.strip(), case=False, regex=False, na=False)
         cards = cards[mask].reset_index(drop=True)
-    st.caption(
-        f"조회 {len(cards):,}개 항목 · 같은 품목이라도 출고단가가 다르면 별도로 표시합니다. "
-        "비고는 현재 등록 자료의 거래처·품목·기준단가·출고단가 조합별로 저장됩니다."
-    )
+    st.caption(f"{len(cards):,}개 항목 · 단가별 구분")
     if cards.empty:
         st.info("검색 결과가 없습니다. 검색어를 변경해 주세요.")
         return
     page_count = math.ceil(len(cards) / page_size)
     page_options = list(range(1, page_count + 1))
-    page = st.selectbox(
-        "페이지", page_options,
-        format_func=lambda value: f"{value} / {page_count} 페이지",
-        key=f"card_page_{selected}_{month}_{page_size}_{hashlib.sha256(search.encode()).hexdigest()[:10]}",
-    )
+    if page_count > 1:
+        page = st.selectbox(
+            "페이지", page_options,
+            format_func=lambda value: f"{value} / {page_count} 페이지",
+            key=f"card_page_{selected}_{month}_{page_size}_{hashlib.sha256(search.encode()).hexdigest()[:10]}",
+        )
+    else:
+        page = 1
     visible = cards.iloc[(page - 1) * page_size:page * page_size]
     page_snapshot = [(key, review_map.get(key, {}).get("reason", ""), review_map.get(key, {}).get("updated_at", "")) for key in visible["비고키"]]
     page_identity = hashlib.sha256(json.dumps(page_snapshot, ensure_ascii=False).encode()).hexdigest()[:16]
-    st.caption("입력 후 저장하지 않고 페이지·검색·월을 바꾸면 입력 내용이 사라질 수 있습니다. 먼저 비고를 저장하세요.")
     with st.form(f"price_notes_{selected}_{page_identity}"):
         edits = []
         for row in visible.to_dict("records"):
@@ -988,6 +986,7 @@ def render_price_cards(diff, db, selected, review_map, month):
                             "reviewer": "",
                         })
                 render_card_shipments(diff, row)
+        st.caption("페이지·검색·월 변경 전 비고를 저장하세요.")
         submitted = st.form_submit_button(
             "입력한 비고 저장 · 팀과 공유", type="primary", use_container_width=True
         )
@@ -1003,7 +1002,6 @@ def render_price_cards(diff, db, selected, review_map, month):
                 st.rerun()
             except Exception:
                 st.error("비고를 저장하지 못했습니다. 입력 내용은 유지되니 잠시 후 다시 저장해 주세요.")
-    st.caption("카드별 비고는 출고별 확인결과·사유와 별도입니다. 같은 비고를 동시에 수정하면 마지막 저장 내용이 반영됩니다.")
 
 
 def main():
@@ -1248,9 +1246,8 @@ def main():
     with tabs[0]:
         section(
             "02",
-            "무엇부터 확인하면 될까요?",
-            "단가 차이와 기준단가 누락을 먼저 확인하고, "
-            "조정·반품과 기준정보 주의사항을 따로 검토하세요.",
+            "점검 현황",
+            "",
         )
 
         a, b, c, d = st.columns(4)
@@ -1262,7 +1259,7 @@ def main():
         )
 
         b.metric(
-            "단가가 다른 출고",
+            "단가 차이",
             f"{len(diff):,}건",
             help=(
                 "최신 기준단가와 허용 범위를 초과해 "
@@ -1277,12 +1274,12 @@ def main():
         )
 
         c.metric(
-            "기준단가를 못 찾은 출고",
+            "기준단가 없음",
             f"{missing_count:,}건",
         )
 
         d.metric(
-            "확인 전·확인 중",
+            "미확인·진행 중",
             f"{len(pending):,}건",
             help=(
                 "자동 판정이 일치가 아니거나 "
@@ -1291,46 +1288,16 @@ def main():
             ),
         )
 
-        if len(pending):
-            st.info(
-                "다음 할 일: ‘③ 출고 찾기’에서 "
-                f"{len(pending):,}건을 검토한 뒤, "
-                "‘④ 결과 기록’에서 확인결과를 저장하세요."
-            )
-        else:
-            st.success(
-                "현재 자료의 확인 대상에 "
-                "미확인·확인 중인 건이 없습니다. "
-                "필요한 내역은 ‘③ 출고 찾기’에서 조회하세요."
-            )
-
         done = len(attention) - len(pending)
-
         st.progress(
-            (
-                done / len(attention)
-                if len(attention)
-                else 1.0
-            ),
-            text=(
-                f"확인 기록 진행 · 확인 대상 "
-                f"{len(attention):,}건 중 "
-                f"결과 등록 {done:,}건"
-            ),
-        )
-
-        st.caption(
-            "‘정상·수정 필요·기준정보 수정 필요’로 기록하면 "
-            "결과 등록으로 집계합니다. "
-            "수정 완료를 의미하지는 않습니다."
+            done / len(attention) if len(attention) else 1.0,
+            text=f"결과 등록 {done:,} / {len(attention):,}건",
         )
 
         render_price_cards(diff, db, selected, review_map, month)
 
         st.caption(
-            "단가 차이규모 합계 "
-            f"{diff['차이규모'].sum():,.1f}원 · "
-            "최신 기준단가 대비 차액의 절댓값 합계이며 확정 손실액은 아닙니다."
+            f"차이규모 {diff['차이규모'].sum():,.1f}원 · 차액 절댓값 합계"
         )
 
     with tabs[1]:
