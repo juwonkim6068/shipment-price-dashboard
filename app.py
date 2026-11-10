@@ -351,92 +351,84 @@ def number(series):
 
 
 def validate(price, shipment, tolerance):
+    """통합단가: 납품처별 단가 우선, 없으면 거래처 공통단가 적용."""
+    import math
+
     price = price.copy()
     shipment = shipment.copy()
-
+    for frame in [price, shipment]:
+        # 새 파일의 거래처코드를 내부 표준 이름으로 연결합니다.
+        for source, target in [
+            ("거래처코드", "코드"),
+            ("품목코드", "품번"),
+            ("품목명", "품명"),
+        ]:
+            if target not in frame.columns and source in frame.columns:
+                frame.rename(columns={source: target}, inplace=True)
     requirements = [
-        (
-            price,
-            [
-                "코드", "품번", "판매단가",
-                "사용여부", "시작일자", "종료일자",
-            ],
-            "단가현황",
-        ),
-        (
-            shipment,
-            [
-                "코드", "품번", "출고번호",
-                "출고일자", "출고수량", "단가",
-            ],
-            "출고현황",
-        ),
+        (price, ["코드", "품번", "판매단가"], "기준단가 파일"),
+        (shipment, ["코드", "품번", "출고번호", "출고일자", "출고수량", "단가"], "출고현황"),
     ]
-
-    for frame, required, name in requirements:
+    for frame, required, label in requirements:
         missing = set(required) - set(frame.columns)
         if missing:
-            raise ValueError(
-                f"{name}에 필요한 열이 없습니다: "
-                f"{', '.join(sorted(missing))}"
-            )
-
-    for frame in [price, shipment]:
+            display = ["거래처코드" if col == "코드" else col for col in sorted(missing)]
+            raise ValueError(f"{label}에 필요한 열이 없습니다: {', '.join(display)}")
         for col in ["코드", "품번"]:
-            frame[col] = frame[col].astype(str).str.strip()
-
-    price = price[
-        price["사용여부"].str.strip().eq("1.사용")
-    ].copy()
-
-    if price.duplicated(["코드", "품번"]).any():
-        raise ValueError(
-            "사용 중인 기준단가에 코드·품번 중복이 있습니다. "
-            "중복을 정리한 후 다시 등록해 주세요."
-        )
-
+            frame[col] = frame[col].fillna("").astype(str).str.strip()
+    # 새 통합파일에는 사용여부가 없어도 됩니다. 구형 파일도 계속 지원합니다.
+    if "사용여부" in price.columns:
+        price = price[price["사용여부"].fillna("").astype(str).str.strip().eq("1.사용")].copy()
+    if "납품처명" not in price.columns:
+        price["납품처명"] = ""
+    price["납품처명"] = price["납품처명"].fillna("").astype(str).str.strip()
+    if price.empty:
+        raise ValueError("기준단가 파일에 사용할 단가가 없습니다.")
+    invalid_key = price["코드"].eq("") | price["품번"].eq("")
+    if invalid_key.any():
+        raise ValueError("기준단가 파일에 거래처코드 또는 품번이 빈 행이 있습니다. 빈 행을 정리해 주세요.")
     price["기준단가"] = number(price["판매단가"])
-    price = price[
-        ["코드", "품번", "기준단가", "시작일자", "종료일자"]
-    ].rename(
-        columns={
-            "시작일자": "기준시작일",
-            "종료일자": "기준종료일",
-        }
-    )
-
+    valid_price = price["기준단가"].map(lambda value: pd.notna(value) and math.isfinite(float(value)))
+    if not valid_price.all():
+        raise ValueError(f"판매단가가 숫자가 아니거나 비어 있는 행이 {int((~valid_price).sum()):,}건 있습니다.")
+    keys = ["코드", "납품처명", "품번"]
+    duplicates = price.duplicated(keys, keep=False)
+    if duplicates.any():
+        raise ValueError(
+            f"거래처코드·납품처명·품번이 같은 기준단가가 {int(duplicates.sum()):,}행 중복됩니다. "
+            "납품처가 다른 행은 중복이 아니며, 같은 조합의 중복만 정리해 주세요."
+        )
     shipment = shipment[
-        shipment["출고번호"].str.strip().ne("")
+        shipment["출고번호"].fillna("").astype(str).str.strip().ne("")
         & shipment["품번"].ne("")
     ].copy()
-
     if shipment.empty:
         raise ValueError("출고 상세 데이터가 없습니다.")
-
-    # 기존 버전의 상세행 키 생성 방식을 유지합니다.
+    if "납품처명" not in shipment.columns:
+        shipment["납품처명"] = ""
+    shipment["납품처명"] = shipment["납품처명"].fillna("").astype(str).str.strip()
+    # 기존 출고별 확인 기록의 식별 방식을 유지합니다.
     shipment["행키"] = [
-        hashlib.sha256(
-            f"{i}|{row['출고번호']}|{row['품번']}".encode()
-        ).hexdigest()
+        hashlib.sha256(f"{i}|{row['출고번호']}|{row['품번']}".encode()).hexdigest()
         for i, row in shipment.iterrows()
     ]
-
-    result = shipment.merge(
-        price,
-        on=["코드", "품번"],
-        how="left",
-        validate="many_to_one",
+    specific = price[price["납품처명"].ne("")][keys + ["기준단가"]].rename(
+        columns={"기준단가": "_납품처단가"}
     )
-
+    common = price[price["납품처명"].eq("")][["코드", "품번", "기준단가"]].rename(
+        columns={"기준단가": "_공통단가"}
+    )
+    result = shipment.merge(specific, on=keys, how="left", validate="many_to_one", sort=False)
+    result = result.merge(common, on=["코드", "품번"], how="left", validate="many_to_one", sort=False)
+    result["기준단가"] = result["_납품처단가"].combine_first(result["_공통단가"])
+    result["기준구분"] = "기준단가 없음"
+    result.loc[result["_공통단가"].notna(), "기준구분"] = "거래처 공통단가"
+    result.loc[result["_납품처단가"].notna(), "기준구분"] = "납품처별 단가"
+    result.drop(columns=["_납품처단가", "_공통단가"], inplace=True)
     for col in ["출고수량", "단가"]:
         result[col] = number(result[col])
-
     result["단가차이"] = result["단가"] - result["기준단가"]
-    result["출고월"] = (
-        result["출고일자"].str[:4]
-        + "-"
-        + result["출고일자"].str[4:6]
-    )
+    result["출고월"] = result["출고일자"].astype(str).str[:4] + "-" + result["출고일자"].astype(str).str[4:6]
 
     def judge(row):
         if pd.isna(row["출고수량"]) or pd.isna(row["단가"]):
@@ -445,71 +437,15 @@ def validate(price, shipment, tolerance):
             return "조정·반품 확인"
         if pd.isna(row["기준단가"]):
             return "기준단가 확인"
-        if abs(row["단가차이"]) > tolerance:
-            return "단가차이 확인"
-        return "일치"
+        return "단가차이 확인" if abs(row["단가차이"]) > tolerance else "일치"
 
     result["판정"] = result.apply(judge, axis=1)
-
-    comparable = result["판정"].isin(
-        ["일치", "단가차이 확인"]
+    result["차이금액"] = (result["단가차이"] * result["출고수량"]).where(
+        result["판정"].isin(["일치", "단가차이 확인"])
     )
-    result["차이금액"] = (
-        result["단가차이"] * result["출고수량"]
-    ).where(comparable)
     result["차이규모"] = result["차이금액"].abs()
-
-    def reference_note(row):
-        notes = []
-
-        if (
-            pd.notna(row["기준단가"])
-            and row["기준단가"] <= 1
-        ):
-            notes.append("기준단가 1원 이하")
-
-        start = pd.to_datetime(
-            str(row["기준시작일"]),
-            format="%Y%m%d",
-            errors="coerce",
-        )
-        end = pd.to_datetime(
-            str(row["기준종료일"]),
-            format="%Y%m%d",
-            errors="coerce",
-        )
-        shipped = pd.to_datetime(
-            str(row["출고일자"]),
-            format="%Y%m%d",
-            errors="coerce",
-        )
-
-        if (
-            pd.notna(start)
-            and pd.notna(end)
-            and end < start
-        ):
-            notes.append("기준단가 적용기간 역전")
-
-        if (
-            pd.notna(start)
-            and pd.notna(shipped)
-            and shipped < start
-        ):
-            notes.append("출고 후 적용되는 최신단가")
-
-        if (
-            pd.notna(end)
-            and pd.notna(shipped)
-            and shipped > end
-        ):
-            notes.append("기준단가 적용기간 종료")
-
-        return " / ".join(notes)
-
-    result["기준정보주의"] = result.apply(
-        reference_note,
-        axis=1,
+    result["기준정보주의"] = result["기준단가"].map(
+        lambda value: "기준단가 1원 이하" if pd.notna(value) and value <= 1 else ""
     )
     return result
 
@@ -707,7 +643,7 @@ def render_upload(db):
         expanded=False,
     ):
         st.info(
-            "① 단가현황 선택 → ② 출고현황 선택 → "
+            "① 통합단가 선택 → ② 출고현황 선택 → "
             "③ 등록 이름 확인 → ‘검증하고 공유 저장’ 클릭"
         )
 
@@ -724,7 +660,7 @@ def render_upload(db):
         p, s = st.columns(2)
 
         price_file = p.file_uploader(
-            "① 단가현황 · 기준이 되는 판매단가",
+            "① 통합단가 · 거래처·납품처별 판매단가",
             type=["xls", "xlsx"],
         )
 
@@ -756,7 +692,7 @@ def render_upload(db):
         ):
             if not price_file or not shipment_file:
                 st.warning(
-                    "두 엑셀 파일을 모두 선택해 주세요."
+                    "통합단가와 출고현황 파일을 모두 선택해 주세요."
                 )
 
             elif not title.strip():
@@ -867,6 +803,7 @@ def render_card_shipments(diff, row):
                 ("출고번호", text_value(item.get("출고번호"))),
                 ("순번", text_value(item.get("순번"))),
                 ("납품처", text_value(item.get("납품처명"))),
+                ("적용 기준", text_value(item.get("기준구분"))),
                 ("출고수량", amount(item.get("출고수량"), "") + " " + text_value(item.get("단위"))),
                 ("기준단가", amount(item.get("기준단가"))),
                 ("출고단가", amount(item.get("단가"))),
@@ -1040,7 +977,7 @@ def render_confirmation_editor(view, db, selected):
         st.info("조회된 출고가 없습니다.")
         return
     cols = [
-        "확인결과", "코드", "거래처명", "품번", "품명", "판정",
+        "확인결과", "코드", "거래처명", "납품처명", "품번", "품명", "기준구분", "판정",
         "규격", "출고일자", "출고번호", "순번", "출고수량",
         "단가", "기준단가", "단가차이", "차이금액", "차이규모",
         "처리결과", "기준정보주의", "확인사유", "담당자",
@@ -1064,6 +1001,8 @@ def render_confirmation_editor(view, db, selected):
         ),
         "코드": st.column_config.TextColumn("거래처코드", width="small"),
         "거래처명": st.column_config.TextColumn("거래처명", width="medium"),
+        "납품처명": st.column_config.TextColumn("납품처명", width="medium"),
+        "기준구분": st.column_config.TextColumn("적용 기준", width="medium"),
         "품번": st.column_config.TextColumn("품목코드", width="small"),
         "품명": st.column_config.TextColumn("품목명", width="medium"),
         "판정": st.column_config.TextColumn("자동 판정", width="medium"),
