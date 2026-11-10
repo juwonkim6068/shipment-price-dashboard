@@ -289,6 +289,14 @@ button[kind="primaryFormSubmit"]:hover {
 @media(min-width:1400px){.price-card-grid{grid-template-columns:1fr 1.8fr 1fr 1.5fr}.price-field:nth-child(n+5){padding-top:10px;border-top:1px solid #edf1f6}}
 @media(max-width:700px){.price-card-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.price-value{font-size:14px}}
 
+
+.shipment-detail{background:#f8fafc;border:1px solid #e7edf5;border-radius:12px;padding:18px 20px;margin:8px 0 14px}
+.shipment-detail-title{font-size:12px;font-weight:750;color:#245bd7;margin-bottom:14px}
+.shipment-detail-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px 22px}
+.shipment-original-note{font-size:12px;line-height:1.7;color:#66758a;margin-top:16px;padding-top:12px;border-top:1px solid #e4eaf3;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:900px){.shipment-detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.shipment-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.shipment-detail{padding:16px}}
+
 </style>
 """
 
@@ -808,7 +816,7 @@ def build_price_cards(diff):
         frame[col] = frame[col].fillna("").astype(str)
     cards = (
         frame.groupby(group_cols, dropna=False)
-        .agg(차이규모=("차이규모", "sum"), 출고건수=("행키", "size"))
+        .agg(차이규모=("차이규모", "sum"), 출고건수=("행키", "size"), 상세행키=("행키", list))
         .reset_index()
         .sort_values("차이규모", ascending=False)
         .reset_index(drop=True)
@@ -822,6 +830,68 @@ def build_price_cards(diff):
 
     cards["비고키"] = cards.apply(note_key, axis=1)
     return cards
+
+
+def render_card_shipments(diff, row):
+    """카드 집계에 실제 포함된 상세행만 접어서 표시합니다."""
+    from html import escape
+
+    shipments = diff[diff["행키"].isin(row["상세행키"])].copy()
+    sort_cols = [col for col in ["출고일자", "출고번호", "순번"] if col in shipments.columns]
+    if sort_cols:
+        shipments = shipments.sort_values(sort_cols, kind="stable")
+    with st.expander(
+        f"출고 상세 {len(shipments):,}건 합산 · 클릭하여 세부 내역 보기",
+        expanded=False,
+    ):
+        st.caption("위 카드에 합산된 실제 출고 내역입니다. 단가와 수량, 출고번호를 건별로 확인하세요.")
+        for index, item in enumerate(shipments.to_dict("records"), 1):
+            def text_value(value):
+                return "—" if value is None or pd.isna(value) or str(value).strip() == "" else str(value)
+
+            def amount(value, suffix="원"):
+                return "—" if value is None or pd.isna(value) else f"{float(value):,.2f}{suffix}"
+
+            date = text_value(item.get("출고일자"))
+            if len(date) == 8 and date.isdigit():
+                date = f"{date[:4]}.{date[4:6]}.{date[6:]}"
+            fields = [
+                ("출고일자", date),
+                ("출고번호", text_value(item.get("출고번호"))),
+                ("순번", text_value(item.get("순번"))),
+                ("납품처", text_value(item.get("납품처명"))),
+                ("출고수량", amount(item.get("출고수량"), "") + " " + text_value(item.get("단위"))),
+                ("기준단가", amount(item.get("기준단가"))),
+                ("출고단가", amount(item.get("단가"))),
+                ("단가차이", amount(item.get("단가차이"))),
+                ("차이금액", amount(item.get("차이금액"))),
+                ("차이규모", amount(item.get("차이규모"))),
+            ]
+            html_fields = "".join(
+                '<div class="price-field"><span class="price-label">'
+                + escape(label)
+                + '</span><span class="price-value '
+                + ("price-emphasis" if label == "차이규모" else "")
+                + '">' + escape(value) + '</span></div>'
+                for label, value in fields
+            )
+            original_notes = []
+            for col in ["비고", "비고(상세)", "비고(상세).1", "승인사유"]:
+                value = text_value(item.get(col))
+                if value != "—":
+                    original_notes.append(f"{col}: {value}")
+            note_html = (
+                '<div class="shipment-original-note">'
+                + escape(" / ".join(original_notes)) + '</div>'
+                if original_notes else ""
+            )
+            st.markdown(
+                '<div class="shipment-detail"><div class="shipment-detail-title">'
+                + f'출고 내역 {index:02d}'
+                + '</div><div class="shipment-detail-grid">'
+                + html_fields + '</div>' + note_html + '</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def render_price_cards(diff, db, selected, review_map, month):
@@ -902,7 +972,6 @@ def render_price_cards(diff, db, selected, review_map, month):
                         '<div class="price-card-grid">' + fields_html + '</div>',
                         unsafe_allow_html=True,
                     )
-                    st.caption(f"출고 상세 {row['출고건수']:,}건 합산")
                 with note:
                     text = st.text_area(
                         "비고", value=saved.get("reason", ""),
@@ -918,6 +987,7 @@ def render_price_cards(diff, db, selected, review_map, month):
                             "reason": text,
                             "reviewer": "",
                         })
+                render_card_shipments(diff, row)
         submitted = st.form_submit_button(
             "입력한 비고 저장 · 팀과 공유", type="primary", use_container_width=True
         )
