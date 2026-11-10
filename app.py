@@ -1121,7 +1121,7 @@ def main():
 
         with right:
             with st.container(border=True):
-                              st.subheader("어느 거래처·품목부터 볼까요?")
+                st.subheader("어느 거래처·품목부터 볼까요?")
                 st.caption(
                     "거래처·품목별 단가 차이 · "
                     "차이규모가 큰 순서 · 최대 15개"
