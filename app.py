@@ -1220,7 +1220,6 @@ def main():
                     st.success(
                         "단가 차이가 있는 출고가 없습니다."
                     )
-                    )
 
         st.caption(
             "단가 차이규모 합계 "
