@@ -8,13 +8,281 @@ from supabase import create_client
 
 
 st.set_page_config(
-    page_title="출고 단가 점검",
-    page_icon="📊",
+    page_title="출고 단가 관리",
+    page_icon="📋",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
-st.title("출고 단가 점검")
-st.caption("엑셀을 등록하고 검증 결과와 확인 기록을 함께 관리합니다.")
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+
+html, body, [class*="css"], .stApp,
+[data-testid="stWidgetLabel"] p,
+[data-testid="stMarkdownContainer"] {
+    font-family: "Noto Sans KR", sans-serif;
+}
+
+.stApp {
+    background: #F4F6FA;
+    color: #17243B;
+}
+
+[data-testid="stHeader"] {
+    background: rgba(244,246,250,0.96);
+}
+
+.block-container {
+    max-width: 1440px;
+    padding-top: 2.5rem;
+    padding-bottom: 4rem;
+}
+
+h1, h2, h3 {
+    color: #17243B;
+    letter-spacing: -0.04em;
+}
+
+h3 {
+    font-size: 1.18rem !important;
+    font-weight: 700 !important;
+}
+
+[data-testid="stCaptionContainer"] {
+    color: #69788E;
+    line-height: 1.7;
+}
+
+.page-hero {
+    background: linear-gradient(115deg, #14263F 0%, #213F64 100%);
+    border-radius: 20px;
+    padding: 32px 36px;
+    margin-bottom: 22px;
+    box-shadow: 0 10px 28px rgba(20,38,63,0.10);
+}
+
+.hero-eyebrow {
+    color: #A9C8EC;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    margin-bottom: 10px;
+}
+
+.hero-title {
+    color: #FFFFFF;
+    font-size: clamp(25px, 3vw, 35px);
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    line-height: 1.4;
+}
+
+.hero-description {
+    color: #D0DCEB;
+    font-size: 14px;
+    margin-top: 10px;
+    line-height: 1.8;
+}
+
+.hero-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.hero-step {
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.09);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #ECF3FC;
+    font-size: 12px;
+}
+
+[data-testid="stExpander"] {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 15px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+[data-testid="stExpander"] summary {
+    padding-top: 15px;
+    padding-bottom: 15px;
+}
+
+[data-testid="stFileUploader"] {
+    background: #F8FAFD;
+    border-radius: 12px;
+}
+
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stTextArea"] textarea {
+    font-size: 14px;
+}
+
+.stButton button,
+.stDownloadButton button,
+.stFormSubmitButton button {
+    border-radius: 9px;
+    font-weight: 600;
+    min-height: 42px;
+    transition: box-shadow 0.15s ease;
+}
+
+.stButton button:hover,
+.stDownloadButton button:hover,
+.stFormSubmitButton button:hover {
+    box-shadow: 0 3px 10px rgba(23,36,59,0.10);
+}
+
+button[kind="primary"],
+button[kind="primaryFormSubmit"] {
+    background: #245BD7;
+    border-color: #245BD7;
+    color: #FFFFFF;
+}
+
+button[kind="primary"]:hover,
+button[kind="primaryFormSubmit"]:hover {
+    background: #1D4DBB;
+    border-color: #1D4DBB;
+    color: #FFFFFF;
+}
+
+[data-testid="stMetric"] {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 20px 22px;
+    min-height: 130px;
+    box-shadow: 0 3px 12px rgba(23,36,59,0.025);
+}
+
+[data-testid="stMetricLabel"] {
+    color: #69788E;
+    font-size: 13px;
+}
+
+[data-testid="stMetricValue"] {
+    color: #17243B;
+    font-size: clamp(24px, 2.6vw, 34px);
+    font-weight: 700;
+    letter-spacing: -0.05em;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+    border-color: #E2E8F0 !important;
+    border-radius: 14px !important;
+}
+
+[data-testid="stForm"] {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 24px;
+}
+
+[data-testid="stDataFrame"] {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+[data-testid="stAlert"] {
+    border-radius: 10px;
+}
+
+.section-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 28px 0 16px;
+}
+
+.section-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #E8EEFC;
+    color: #245BD7;
+    border-radius: 9px;
+    min-width: 34px;
+    height: 34px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.section-title {
+    color: #17243B;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.4;
+}
+
+.section-description {
+    color: #69788E;
+    font-size: 12px;
+    line-height: 1.7;
+    margin-top: 5px;
+}
+
+@media (max-width: 640px) {
+    .block-container {
+        padding-top: 1.5rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .page-hero {
+        padding: 24px 22px;
+        border-radius: 15px;
+    }
+
+    [data-testid="stMetric"] {
+        min-height: 110px;
+        padding: 16px;
+    }
+}
+</style>
+
+<div class="page-hero">
+    <div class="hero-eyebrow">SHIPMENT PRICE MANAGEMENT</div>
+    <div class="hero-title">출고 단가 관리</div>
+    <div class="hero-description">
+        출고 내역과 기준단가를 한눈에 비교하고,<br>
+        확인이 필요한 건부터 팀과 함께 처리하세요.
+    </div>
+    <div class="hero-steps">
+        <span class="hero-step">01 · 엑셀 등록</span>
+        <span class="hero-step">02 · 단가 비교</span>
+        <span class="hero-step">03 · 내역 확인</span>
+        <span class="hero-step">04 · 처리 기록</span>
+    </div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+
+def section_heading(number, title, description):
+    st.markdown(
+        f"""
+        <div class="section-heading">
+            <span class="section-number">{number}</span>
+            <div>
+                <div class="section-title">{title}</div>
+                <div class="section-description">{description}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 try:
     db = create_client(
