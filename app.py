@@ -338,6 +338,15 @@ button[kind="primaryFormSubmit"]:hover {
 @media(max-width:1000px){.review-grid{grid-template-columns:minmax(130px,2fr) minmax(65px,1fr) repeat(4,minmax(50px,1fr));gap:8px}.review-number{font-size:11px}}
 @media(max-width:640px){.review-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.review-grid-head{display:none}.review-product{grid-column:1 / -1}.review-number{text-align:left}.review-detail-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+
+[class*="st-key-review_confirmed_"]{background:#edf7f1;border-left:3px solid #73af8b;border-radius:11px;padding:0 12px;margin:5px 0;transition:background .15s ease;}
+[class*="st-key-review_pending_"]{background:#ffffff;border-left:3px solid #e6ebf2;border-radius:11px;padding:0 12px;margin:5px 0;}
+[class*="st-key-review_confirmed_"] .review-data-row,[class*="st-key-review_pending_"] .review-data-row{border-bottom:0;}
+.review-confirmation-badge{display:inline-flex;align-items:center;font-size:10px;font-weight:700;line-height:1.4;padding:4px 9px;border-radius:14px;}
+.review-confirmation-badge.confirmed{background:#d5ebde;color:#2b6a48;}
+.review-confirmation-badge.pending{background:#f0f3f7;color:#7c899a;}
+[class*="st-key-review_confirmed_"] [data-baseweb="select"]>div{background:#f5fbf7;border-color:#a9cfb7;}
+
 </style>
 """
 
@@ -1086,50 +1095,53 @@ def render_confirmation_editor(view, db, selected):
                 )
                 for row in rows.to_dict('records'):
                     row_key = row['행키']
-                    state, content = st.columns([0.8, 6.5], vertical_alignment='center')
                     current = row.get('확인결과', '미확인')
-                    widget_key = f"auto_check_{selected}_{row_key}_{current}"
-                    state.selectbox(
-                        f"확인결과 · {row.get('출고번호', '')} / {row.get('순번', '')}",
-                        ['미확인', '확인'], index=1 if current == '확인' else 0,
-                        key=widget_key,
-                        label_visibility='collapsed',
-                        on_change=auto_save_confirmation,
-                        args=(db, selected, row_key, widget_key, current),
-                    )
-                    judgment = clean(row.get('판정'))
-                    badge_class = {
-                        '일치':'matched', '단가차이 확인':'difference',
-                        '기준단가 확인':'reference', '조정·반품 확인':'adjustment',
-                    }.get(judgment, 'neutral')
-                    date = clean(row.get('출고일자'))
-                    if len(date)==8 and date.isdigit():date=f'{date[:4]}.{date[4:6]}.{date[6:]}'
-                    subtitle = ' · '.join([date, clean(row.get('출고번호')), clean(row.get('순번'))])
-                    detail_fields = [
-                        ('품목코드',row.get('품번')),('품목명',row.get('품명')),
-                        ('규격',row.get('규격')),('납품처명',row.get('납품처명')),
-                        ('적용 기준',row.get('기준구분')),('단가차이',money(row.get('단가차이'))),
-                        ('차이금액',money(row.get('차이금액'))),
-                        ('기준정보 주의',row.get('기준정보주의')),
-                        ('상세 처리결과',row.get('처리결과')),
-                        ('확인사유',row.get('확인사유')),('담당자',row.get('담당자')),
-                    ]
-                    detail_html=''.join('<div><span>'+escape(label)+'</span><strong>'+text(val)+'</strong></div>' for label,val in detail_fields)
-                    html = (
-                        '<div class="review-data-row"><div class="review-grid">'
-                        '<div class="review-product"><strong>'+text(row.get('품명'))+'</strong>'
-                        '<span class="review-product-code">'+text(row.get('품번'))+'</span>'
-                        '<span class="review-meta">'+escape(subtitle)+'</span></div>'
-                        '<div class="review-destination">'+text(row.get('납품처명'))+'</div>'
-                        '<div class="review-number">'+money(row.get('출고수량'))+'</div>'
-                        '<div class="review-number">'+money(row.get('기준단가'))+'</div>'
-                        '<div class="review-number review-actual">'+money(row.get('단가'))+'</div>'
-                        '<div class="review-number review-difference">'+money(row.get('차이규모'))+'</div></div>'
-                        '<div class="review-row-bottom"><span class="review-badge '+badge_class+'">'+escape(judgment)+'</span>'
-                        '<span class="review-basis">'+text(row.get('기준구분'))+'</span></div>'
-                        '<details class="review-details"><summary>상세내역</summary><div class="review-detail-fields">'+detail_html+'</div></details></div>'
-                    )
-                    content.markdown(html, unsafe_allow_html=True)
+                    row_status = 'confirmed' if current == '확인' else 'pending'
+                    status_text = '✓ 확인 완료' if current == '확인' else '미확인'
+                    with st.container(key=f"review_{row_status}_{selected}_{row_key}"):
+                        state, content = st.columns([0.8, 6.5], vertical_alignment='center')
+                        widget_key = f"auto_check_{selected}_{row_key}_{current}"
+                        state.selectbox(
+                            f"확인결과 · {row.get('출고번호', '')} / {row.get('순번', '')}",
+                            ['미확인', '확인'], index=1 if current == '확인' else 0,
+                            key=widget_key,
+                            label_visibility='collapsed',
+                            on_change=auto_save_confirmation,
+                            args=(db, selected, row_key, widget_key, current),
+                        )
+                        judgment = clean(row.get('판정'))
+                        badge_class = {
+                            '일치':'matched', '단가차이 확인':'difference',
+                            '기준단가 확인':'reference', '조정·반품 확인':'adjustment',
+                        }.get(judgment, 'neutral')
+                        date = clean(row.get('출고일자'))
+                        if len(date)==8 and date.isdigit():date=f'{date[:4]}.{date[4:6]}.{date[6:]}'
+                        subtitle = ' · '.join([date, clean(row.get('출고번호')), clean(row.get('순번'))])
+                        detail_fields = [
+                            ('품목코드',row.get('품번')),('품목명',row.get('품명')),
+                            ('규격',row.get('규격')),('납품처명',row.get('납품처명')),
+                            ('적용 기준',row.get('기준구분')),('단가차이',money(row.get('단가차이'))),
+                            ('차이금액',money(row.get('차이금액'))),
+                            ('기준정보 주의',row.get('기준정보주의')),
+                            ('상세 처리결과',row.get('처리결과')),
+                            ('확인사유',row.get('확인사유')),('담당자',row.get('담당자')),
+                        ]
+                        detail_html=''.join('<div><span>'+escape(label)+'</span><strong>'+text(val)+'</strong></div>' for label,val in detail_fields)
+                        html = (
+                            '<div class="review-data-row"><div class="review-grid">'
+                            '<div class="review-product"><strong>'+text(row.get('품명'))+'</strong>'
+                            '<span class="review-product-code">'+text(row.get('품번'))+'</span>'
+                            '<span class="review-meta">'+escape(subtitle)+'</span></div>'
+                            '<div class="review-destination">'+text(row.get('납품처명'))+'</div>'
+                            '<div class="review-number">'+money(row.get('출고수량'))+'</div>'
+                            '<div class="review-number">'+money(row.get('기준단가'))+'</div>'
+                            '<div class="review-number review-actual">'+money(row.get('단가'))+'</div>'
+                            '<div class="review-number review-difference">'+money(row.get('차이규모'))+'</div></div>'
+                            '<div class="review-row-bottom"><span class="review-confirmation-badge '+row_status+'">'+status_text+'</span><span class="review-badge '+badge_class+'">'+escape(judgment)+'</span>'
+                            '<span class="review-basis">'+text(row.get('기준구분'))+'</span></div>'
+                            '<details class="review-details"><summary>상세내역</summary><div class="review-detail-fields">'+detail_html+'</div></details></div>'
+                        )
+                        content.markdown(html, unsafe_allow_html=True)
 
 
 def main():
