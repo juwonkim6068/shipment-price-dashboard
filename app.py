@@ -369,6 +369,7 @@ button[kind="primaryFormSubmit"]:hover {
 [data-testid="stTabs"] [role="tab"][aria-selected="false"]:hover{background:#f6f8fb !important;color:#4e6786 !important;}
 [data-testid="stTabs"] [data-baseweb="tab-highlight"],[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important;}
 @media(max-width:640px){.st-key-source_selection_panel{padding:14px 16px !important;}.st-key-month_selection_panel{padding:12px 16px !important;}[data-testid="stTabs"] [role="tab"]{padding:10px 8px !important;}[data-testid="stTabs"] [role="tab"] p{font-size:12px !important;}}
+.review-owner{display:inline-block;margin-left:12px;font-size:11px;font-weight:500;color:#6a8099;}
 </style>
 """
 
@@ -661,7 +662,7 @@ def export_excel(frame):
 
     output = io.BytesIO()
     safe = frame.drop(
-        columns=["행키"],
+        columns=["행키", "_자료지문"],
         errors="ignore",
     ).copy()
 
@@ -702,115 +703,270 @@ def export_excel(frame):
     return output.getvalue()
 
 
-def render_upload(db):
+def load_customer_owners(db):
+    mapping, offset = {}, 0
+    while True:
+        rows = (
+            db.table("inspection_reviews").select("row_key,reason,updated_at")
+            .like("row_key", "owner:v1:%")
+            .order("updated_at", desc=True).range(offset, offset + 999)
+            .execute().data
+        )
+        for row in rows:
+            code = row["row_key"].removeprefix("owner:v1:")
+            if code not in mapping:
+                mapping[code] = row.get("reason") or "미지정"
+        if len(rows) < 1000:
+            return mapping
+        offset += 1000
+
+
+def parse_customer_owners(frame):
+    frame = frame.copy()
+    if "코드" not in frame and "거래처코드" in frame:
+        frame.rename(columns={"거래처코드": "코드"}, inplace=True)
+    if not {"코드", "담당자"}.issubset(frame.columns):
+        raise ValueError("담당자 파일에는 코드(또는 거래처코드)와 담당자 열이 필요합니다.")
+    frame["코드"] = frame["코드"].fillna("").astype(str).str.strip()
+    frame["담당자"] = frame["담당자"].fillna("").astype(str).str.strip()
+    frame = frame[frame["코드"].ne("")].copy()
+    if frame.empty:
+        raise ValueError("담당자 파일에 거래처코드가 없습니다.")
+    if frame.duplicated("코드").any():
+        raise ValueError("담당자 파일에 같은 거래처코드가 중복됩니다. 담당자를 하나로 정리해 주세요.")
+    deleted = int(frame["담당자"].eq("삭제").sum())
+    frame.loc[frame["담당자"].eq("삭제"), "담당자"] = "미지정(삭제 표기)"
+    frame.loc[frame["담당자"].eq(""), "담당자"] = "미지정"
+    return dict(zip(frame["코드"], frame["담당자"])), deleted
+
+
+def render_owner_management(db, selected, owners):
+    with st.expander("거래처 담당자 관리", expanded=not bool(owners)):
+        st.caption("담당자 파일을 한 번 등록하면 기존·신규 자료에 공통 적용됩니다. 파일에 없는 기존 담당자는 유지합니다.")
+        upload = st.file_uploader("거래처 담당자 파일", type=["xls", "xlsx"], key="customer_owner_upload")
+        if upload and st.button("담당자 등록·갱신", key="save_customer_owners"):
+            try:
+                mapping, deleted = parse_customer_owners(read_excel(upload))
+                records = [
+                    {"batch_id": selected, "row_key": "owner:v1:" + code,
+                     "status": "확인 중", "reason": owner, "reviewer": ""}
+                    for code, owner in mapping.items()
+                ]
+                db.table("inspection_reviews").upsert(records, on_conflict="batch_id,row_key").execute()
+                st.session_state["owner_import_notice"] = (len(mapping), deleted)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+            except Exception:
+                st.error("담당자를 저장하지 못했습니다. 다시 시도해 주세요.")
+        notice = st.session_state.pop("owner_import_notice", None)
+        if notice:
+            st.success(f"담당자 {notice[0]:,}개 코드 등록 완료 · 삭제 표기 {notice[1]:,}건은 미지정 처리")
+        if owners:
+            names = pd.Series(list(owners.values()), dtype=str).value_counts()
+            st.caption("등록 현황 · " + " / ".join(f"{name} {count:,}개" for name, count in names.items()))
+
+
+def upload_fingerprint(price_bytes, shipment_bytes, tolerance):
+    parts = [hashlib.sha256(price_bytes).hexdigest(), hashlib.sha256(shipment_bytes).hexdigest(), str(float(tolerance))]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+
+def find_duplicate_upload(db, fingerprint):
+    return (
+        db.table("inspection_batches").select("id,title")
+        .contains("results", [{"_자료지문": fingerprint}])
+        .limit(1).execute().data
+    )
+
+
+def inspect_upload(price, shipment, tolerance, owners):
+    import math
+    errors, warnings = [], []
+    price, shipment = price.copy(), shipment.copy()
+    for frame in [price, shipment]:
+        for old, new in [("거래처코드", "코드"), ("품목코드", "품번"), ("품목명", "품명")]:
+            if new not in frame and old in frame:
+                frame.rename(columns={old: new}, inplace=True)
+    for name, frame, required in [
+        ("통합단가", price, ["코드", "품번", "판매단가"]),
+        ("출고현황", shipment, ["코드", "품번", "출고번호", "출고일자", "출고수량", "단가"]),
+    ]:
+        missing = set(required) - set(frame.columns)
+        if missing:
+            errors.append(f"{name}: 필수 열 누락 · {', '.join(sorted(missing))}")
+    if errors:
+        return {"errors": errors, "warnings": warnings, "result": None}
+    for frame in [price, shipment]:
+        for col in ["코드", "품번"]:
+            frame[col] = frame[col].fillna("").astype(str).str.strip()
+    details = shipment[shipment["출고번호"].fillna("").astype(str).str.strip().ne("")].copy()
+    if details.empty:
+        errors.append("출고현황: 출고 상세가 없습니다.")
+    blank_keys = details["코드"].eq("") | details["품번"].eq("")
+    if blank_keys.any():
+        errors.append(f"출고현황: 거래처코드 또는 품번 공란 {int(blank_keys.sum()):,}건")
+    for col in ["출고수량", "단가"]:
+        invalid = ~number(details[col]).map(lambda value: pd.notna(value) and math.isfinite(float(value)))
+        if invalid.any():
+            errors.append(f"출고현황: {col} 숫자 오류·공란 {int(invalid.sum()):,}건")
+    dates = pd.to_datetime(details["출고일자"].astype(str), format="%Y%m%d", errors="coerce")
+    if dates.isna().any():
+        errors.append(f"출고현황: 출고일자 오류 {int(dates.isna().sum()):,}건")
+    if "순번" in details:
+        keys = [col for col in ["사업장", "출고번호", "순번"] if col in details]
+        count = int(details.duplicated(keys, keep=False).sum())
+        if count:
+            warnings.append(f"출고 전표·순번 중복 {count:,}행 · 중복 업로드 여부 확인")
+    result = None
+    if not errors:
+        try:
+            result = validate(price, shipment, tolerance)
+        except ValueError as exc:
+            errors.append(str(exc))
+    if result is not None:
+        missing = int(result["기준단가"].isna().sum())
+        if missing:
+            warnings.append(f"기준단가 미연결 {missing:,}건 · 거래처·품목·납품처명 확인")
+        unspecified = sum(str(code) not in owners or str(owners.get(str(code), "")).startswith("미지정") for code in result["코드"])
+        if unspecified:
+            warnings.append(f"담당자 미지정 출고 {unspecified:,}건 · 담당자 파일 등록·확인")
+        low = int(result["기준단가"].le(1).sum())
+        if low:
+            warnings.append(f"기준단가 1원 이하 {low:,}건 · 정상 등록 여부 확인")
+    return {"errors": errors, "warnings": warnings, "result": result}
+
+
+def closing_report(data, title, month, owner, filenames):
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    data = data.copy()
+    attention = data[data["판정"].ne("일치") | data["기준정보주의"].fillna("").ne("")]
+    difference = data[data["판정"].eq("단가차이 확인")]
+    summary = pd.DataFrame([
+        ["자료명", title], ["출고월", month], ["담당자 필터", owner],
+        ["작성일시", datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")],
+        ["출고 파일", filenames[0]], ["기준단가 파일", filenames[1]],
+        ["전체 출고", len(data)], ["단가 차이", len(difference)],
+        ["기준단가 없음", int(data["기준단가"].isna().sum())],
+        ["확인 대상", len(attention)], ["확인 대상 중 확인", int(attention["확인결과"].eq("확인").sum())],
+        ["확인 대상 중 미확인", int(attention["확인결과"].ne("확인").sum())],
+        ["차이규모 합계", float(difference["차이규모"].sum())],
+        ["금액 의미", "차액 절댓값 합계이며 확정 손실액이 아닙니다."],
+    ], columns=["항목", "내용"])
+    temp = data.assign(
+        단가차이건수=data["판정"].eq("단가차이 확인").astype(int),
+        확인대상건수=(data["판정"].ne("일치") | data["기준정보주의"].fillna("").ne("")).astype(int),
+        미확인건수=((data["판정"].ne("일치") | data["기준정보주의"].fillna("").ne("")) & data["확인결과"].ne("확인")).astype(int),
+        차이합계=data["차이규모"].where(data["판정"].eq("단가차이 확인"), 0),
+    )
+    def aggregate(keys):
+        return temp.groupby(keys, dropna=False).agg(
+            출고건수=("행키", "size"), 단가차이건수=("단가차이건수", "sum"),
+            확인대상건수=("확인대상건수", "sum"), 미확인건수=("미확인건수", "sum"),
+            차이규모=("차이합계", "sum"),
+        ).reset_index()
+    rename = {"코드": "거래처코드", "품번": "품목코드", "품명": "품목명"}
+    preferred = ["담당자", "코드", "거래처명", "납품처명", "품번", "품명", "규격", "출고일자", "출고번호", "순번", "출고수량", "기준단가", "단가", "단가차이", "차이규모", "판정", "확인결과", "의견/설명", "확인사유", "기준구분", "기준정보주의", "확인작성자"]
+    cols = [col for col in preferred if col in data]
+    frames = {
+        "마감요약": summary,
+        "담당자별현황": aggregate(["담당자"]),
+        "거래처별현황": aggregate(["담당자", "코드", "거래처명"]).rename(columns=rename),
+        "확인대상상세": attention[cols].rename(columns=rename),
+        "전체출고상세": data[cols].rename(columns=rename),
+    }
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for name, frame in frames.items():
+            safe = frame.copy()
+            for col in safe.select_dtypes(include=["object", "string"]).columns:
+                safe[col] = safe[col].map(lambda value: ILLEGAL_CHARACTERS_RE.sub("", value) if isinstance(value, str) else value)
+            safe.to_excel(writer, sheet_name=name, index=False)
+            ws = writer.sheets[name]
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+            ws.sheet_view.showGridLines = False
+            for cell in ws[1]:
+                cell.fill = PatternFill("solid", fgColor="203B5C")
+                cell.font = Font(color="FFFFFF", bold=True)
+            ws.row_dimensions[1].height = 26
+            for column in ws.columns:
+                header = column[0].value
+                ws.column_dimensions[column[0].column_letter].width = 45 if header in ["의견/설명", "확인사유"] else 22
+                for cell in column[1:]:
+                    if cell.data_type == "f":
+                        cell.data_type = "s"
+                    if isinstance(cell.value, (int, float)):
+                        cell.number_format = "#,##0.00"
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if name == "마감요약":
+                ws.column_dimensions['B'].width = 65
+    return output.getvalue()
+
+
+def render_upload(db, owners):
     with st.container(key="source_upload_panel"):
-        with st.expander(
-            "＋ 새 엑셀 등록 · 통합단가와 출고현황 업로드",
-            expanded=False,
-        ):
-            st.info(
-                "① 통합단가 선택 → ② 출고현황 선택 → "
-                "③ 등록 이름 확인 → ‘검증하고 공유 저장’ 클릭"
-            )
-
-            today = datetime.now(
-                ZoneInfo("Asia/Seoul")
-            ).strftime("%Y-%m-%d")
-
-            title = st.text_input(
-                "등록 이름",
-                value=f"{today} 단가 점검",
-                help="예: 2026년 11월 마감 · 11월 10일 기준",
-            )
-
+        with st.expander("＋ 새 엑셀 등록 · 사전검사 후 저장", expanded=False):
+            today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+            title = st.text_input("등록 이름", value=f"{today} 단가 점검")
             p, s = st.columns(2)
-
-            price_file = p.file_uploader(
-                "① 통합단가 · 거래처·납품처별 판매단가",
-                type=["xls", "xlsx"],
-            )
-
-            shipment_file = s.file_uploader(
-                "② 출고현황 · 실제 출고된 내역",
-                type=["xls", "xlsx"],
-            )
-
-            tolerance = st.number_input(
-                "허용할 단가 차이(원)",
-                min_value=0.0,
-                value=0.01,
-                step=0.01,
-                format="%.4f",
-                help=(
-                    "이 금액을 초과하는 단가 차이를 "
-                    "확인 대상으로 분류합니다."
-                ),
-            )
-
-            st.caption(
-                "기존 자료는 삭제되지 않습니다. "
-                "같은 파일을 다시 저장해도 별도 자료로 등록됩니다."
-            )
-
-            if st.button(
-                "③ 검증하고 공유 저장",
-                type="primary",
-            ):
-                if not price_file or not shipment_file:
-                    st.warning(
-                        "통합단가와 출고현황 파일을 모두 선택해 주세요."
-                    )
-
-                elif not title.strip():
+            price_file = p.file_uploader("① 통합단가 · 거래처·납품처별 판매단가", type=["xls", "xlsx"])
+            shipment_file = s.file_uploader("② 출고현황 · 실제 출고된 내역", type=["xls", "xlsx"])
+            tolerance = st.number_input("허용할 단가 차이(원)", min_value=0.0, value=0.01, step=0.01, format="%.4f")
+            if not price_file or not shipment_file:
+                st.caption("두 파일 선택 → 사전검사 → 결과 확인 → 공유 저장")
+                return
+            fingerprint = upload_fingerprint(price_file.getvalue(), shipment_file.getvalue(), tolerance)
+            if st.button("③ 업로드 사전검사", type="primary"):
+                try:
+                    inspection = inspect_upload(read_excel(price_file), read_excel(shipment_file), tolerance, owners)
+                    inspection["fingerprint"] = fingerprint
+                    inspection["duplicate"] = find_duplicate_upload(db, fingerprint)
+                    st.session_state["upload_precheck"] = inspection
+                except Exception:
+                    st.error("파일을 읽거나 검사하지 못했습니다. Excel 파일 형식과 서버 연결을 확인해 주세요.")
+            inspection = st.session_state.get("upload_precheck")
+            if not inspection or inspection.get("fingerprint") != fingerprint:
+                st.caption("파일 또는 허용 차이가 변경되면 다시 검사해 주세요.")
+                return
+            for message in inspection["errors"]:
+                st.error(message)
+            for message in inspection["warnings"]:
+                st.warning(message)
+            if inspection["errors"]:
+                st.caption("오류를 수정한 파일로 다시 검사하면 저장할 수 있습니다.")
+                return
+            result = inspection["result"]
+            st.success(f"사전검사 통과 · 출고 상세 {len(result):,}건 · 차이 {result['판정'].eq('단가차이 확인').sum():,}건")
+            allow_duplicate = False
+            if inspection["duplicate"]:
+                st.warning("같은 파일과 허용 차이로 등록한 자료가 있습니다.")
+                allow_duplicate = st.checkbox("동일 자료를 별도 검증 건으로 다시 등록합니다", key=f"allow_duplicate_{fingerprint}")
+            acknowledged = not inspection["warnings"] or st.checkbox("경고 내용을 확인했습니다", key=f"acknowledge_{fingerprint}")
+            blocked = not acknowledged or (bool(inspection["duplicate"]) and not allow_duplicate)
+            if st.button("④ 검증 결과 공유 저장", type="primary", disabled=blocked):
+                if not title.strip():
                     st.warning("등록 이름을 입력해 주세요.")
-
-                else:
-                    try:
-                        with st.spinner(
-                            "단가를 비교하고 저장하고 있습니다."
-                        ):
-                            result = validate(
-                                read_excel(price_file),
-                                read_excel(shipment_file),
-                                tolerance,
-                            )
-
-                            response = (
-                                db.table("inspection_batches")
-                                .insert({
-                                    "title": title.strip(),
-                                    "shipment_filename": (
-                                        shipment_file.name
-                                    ),
-                                    "price_filename": price_file.name,
-                                    "results": json.loads(
-                                        result.to_json(
-                                            orient="records",
-                                            force_ascii=False,
-                                            double_precision=15,
-                                        )
-                                    ),
-                                })
-                                .execute()
-                            )
-
-                            st.session_state["batch_id"] = (
-                                response.data[0]["id"]
-                            )
-
-                        st.success(
-                            "등록 완료 · 아래 ‘검토할 자료’에서 "
-                            "결과를 확인하세요."
-                        )
-
-                    except ValueError as exc:
-                        st.error(str(exc))
-
-                    except Exception:
-                        st.error(
-                            "등록하지 못했습니다. "
-                            "파일 형식과 서버 연결을 확인해 주세요."
-                        )
+                    return
+                try:
+                    duplicate = find_duplicate_upload(db, fingerprint)
+                    if duplicate and not allow_duplicate:
+                        st.warning("다른 사용자가 동일 자료를 등록했습니다. 다시 검사해 주세요.")
+                        return
+                    output = result.copy()
+                    output["_자료지문"] = ""
+                    output.loc[output.index[0], "_자료지문"] = fingerprint
+                    response = db.table("inspection_batches").insert({
+                        "title": title.strip(), "shipment_filename": shipment_file.name,
+                        "price_filename": price_file.name,
+                        "results": json.loads(output.to_json(orient="records", force_ascii=False, double_precision=15)),
+                    }).execute()
+                    st.session_state["batch_id"] = response.data[0]["id"]
+                    st.session_state.pop("upload_precheck", None)
+                    st.success("등록 완료 · 아래에서 검토할 자료를 선택하세요.")
+                except Exception:
+                    st.error("저장하지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
 
 def build_price_cards(diff):
@@ -911,6 +1067,9 @@ def render_price_cards(diff, db, selected, review_map, month):
     st.subheader("거래처·품목별 단가 확인")
     saved_note_key = st.session_state.pop("price_note_saved", None)
     cards = build_price_cards(diff)
+    if not cards.empty and "담당자" in diff:
+        owner_map = diff.drop_duplicates("코드").set_index("코드")["담당자"].to_dict()
+        cards["담당자"] = cards["코드"].map(owner_map).fillna("미지정")
     if cards.empty:
         st.success("선택한 출고월에는 단가 차이가 있는 출고가 없습니다.")
         return
@@ -959,6 +1118,7 @@ def render_price_cards(diff, db, selected, review_map, month):
                 ("거래처명", row["거래처명"]),
                 ("품목코드", row["품번"]),
                 ("품목명", row["품명"]),
+                ("담당자", row.get("담당자", "미지정")),
                 ("기준단가", f"{row['기준단가']:,.2f}원"),
                 ("출고단가", f"{row['단가']:,.2f}원"),
                 ("차이규모", f"{row['차이규모']:,.1f}원"),
@@ -1172,7 +1332,7 @@ def render_confirmation_editor(view, db, selected):
                 st.markdown(
                     '<div class="review-customer"><div><span class="review-customer-code">'
                     + text(customer_code) + '</span><span class="review-customer-name">'
-                    + text(customer_name) + '</span></div><span class="review-customer-count">'
+                    + text(customer_name) + '</span><span class="review-owner">담당자 ' + text(rows.iloc[0].get('담당자', '미지정')) + '</span></div><span class="review-customer-count">'
                     + f'{len(rows):,}건' + '</span></div>',
                     unsafe_allow_html=True,
                 )
@@ -1285,7 +1445,12 @@ def main():
         "새 파일을 받은 경우에만 ‘새 자료 등록하기’를 여세요.",
     )
 
-    render_upload(db)
+    try:
+        owners = load_customer_owners(db)
+    except Exception:
+        st.error("담당자 정보를 불러오지 못했습니다. 잠시 후 새로 고침해 주세요.")
+        st.stop()
+    render_upload(db, owners)
 
     try:
         batches = (
@@ -1394,6 +1559,8 @@ def main():
         )
         st.stop()
 
+    render_owner_management(db, selected, owners)
+
     data = pd.DataFrame(batch["results"])
 
     if data.empty:
@@ -1428,6 +1595,9 @@ def main():
             )
         )
 
+    data["확인작성자"] = data["담당자"]
+    data["담당자"] = data["코드"].astype(str).map(owners).fillna("미지정")
+
     data["의견/설명"] = [
         review_map.get(opinion_key(key), {}).get("reason", previous or "")
         for key, previous in zip(data["행키"], data["확인사유"])
@@ -1453,6 +1623,13 @@ def main():
         if month == "전체"
         else data[data["출고월"].eq(month)]
     )
+
+    owner_filter = st.selectbox(
+        "담당자별 조회", ["전체"] + sorted(data["담당자"].dropna().unique().tolist()),
+        key=f"owner_filter_{selected}",
+    )
+    if owner_filter != "전체":
+        monthly = monthly[monthly["담당자"].eq(owner_filter)]
 
     diff = monthly[
         monthly["판정"].eq("단가차이 확인")
@@ -1531,6 +1708,17 @@ def main():
             text=f"결과 등록 {done:,} / {len(attention):,}건",
         )
 
+        with st.expander("마감 보고서 다운로드"):
+            st.caption("선택한 출고월·담당자 기준 · 요약 / 담당자별 / 거래처별 / 확인 대상 / 전체 출고")
+            st.download_button(
+                "마감 보고서 Excel 다운로드",
+                closing_report(monthly, batch_map[selected]["title"], month, owner_filter,
+                               (batch["shipment_filename"], batch["price_filename"])),
+                file_name=f"마감보고서_{datetime.now(ZoneInfo('Asia/Seoul')):%Y%m%d}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+
         render_price_cards(diff, db, selected, review_map, month)
 
         st.caption(
@@ -1598,7 +1786,7 @@ def main():
 
             for col in [
                 "코드", "거래처명", "품번",
-                "품명", "출고번호",
+                "품명", "출고번호", "담당자", "납품처명",
             ]:
                 if col in view.columns:
                     mask |= (
