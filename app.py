@@ -1004,13 +1004,37 @@ def confirmation_record(batch_id, row_key, value):
     }
 
 
+def auto_save_confirmation(db, batch_id, row_key, widget_key, previous):
+    """선택 변경 시 한 건만 저장하며, 실패하면 마지막 저장값으로 되돌립니다."""
+    value = st.session_state.get(widget_key, previous)
+    if value not in ["미확인", "확인"] or value == previous:
+        return
+    try:
+        db.table("inspection_reviews").upsert(
+            confirmation_record(batch_id, row_key, value),
+            on_conflict="batch_id,row_key",
+        ).execute()
+        st.session_state["confirmation_autosave_notice"] = {
+            "batch_id": batch_id, "ok": True,
+        }
+    except Exception:
+        st.session_state[widget_key] = previous
+        st.session_state["confirmation_autosave_notice"] = {
+            "batch_id": batch_id, "ok": False,
+        }
+
+
 def render_confirmation_editor(view, db, selected):
     """거래처별 부드러운 목록형 표. 확인결과 변경·저장은 그대로 유지합니다."""
     from html import escape
     import math
 
-    if st.session_state.pop("checks_saved", False):
-        st.success("확인 여부를 저장했습니다.")
+    notice = st.session_state.pop("confirmation_autosave_notice", None)
+    if notice and notice.get("batch_id") == selected:
+        if notice.get("ok"):
+            st.toast("확인결과 자동 저장 완료", icon="✅")
+        else:
+            st.error("자동 저장에 실패했습니다. 이전 값으로 되돌렸습니다. 다시 선택해 주세요.")
     if view.empty:
         st.info("조회된 출고가 없습니다.")
         return
@@ -1025,9 +1049,7 @@ def render_confirmation_editor(view, db, selected):
             key=f"review_page_{selected}_{search_identity}",
         )
     visible = view.iloc[(page - 1) * 20:page * 20]
-    snapshot = json.dumps(list(zip(visible["행키"], visible["확인결과"])), ensure_ascii=False)
-    form_identity = hashlib.sha256(snapshot.encode()).hexdigest()[:16]
-    st.caption("확인결과 변경 후 저장하세요.")
+    st.caption("확인결과는 변경 즉시 자동 저장됩니다.")
 
     def clean(value):
         if value is None or pd.isna(value) or str(value).strip() == "":
@@ -1042,8 +1064,7 @@ def render_confirmation_editor(view, db, selected):
             return "—"
         return f"{float(value):,.2f}"
 
-    edits = []
-    with st.form(f"soft_checks_{selected}_{form_identity}"):
+    with st.container():
         groups = [col for col in ["코드", "거래처명"] if col in visible.columns]
         grouped = visible.groupby(groups, sort=False, dropna=False) if groups else [(('', ''), visible)]
         for identity, rows in grouped:
@@ -1067,14 +1088,15 @@ def render_confirmation_editor(view, db, selected):
                     row_key = row['행키']
                     state, content = st.columns([0.8, 6.5], vertical_alignment='center')
                     current = row.get('확인결과', '미확인')
-                    value = state.selectbox(
+                    widget_key = f"auto_check_{selected}_{row_key}_{current}"
+                    state.selectbox(
                         f"확인결과 · {row.get('출고번호', '')} / {row.get('순번', '')}",
                         ['미확인', '확인'], index=1 if current == '확인' else 0,
-                        key=f"soft_check_{selected}_{form_identity}_{row_key}",
+                        key=widget_key,
                         label_visibility='collapsed',
+                        on_change=auto_save_confirmation,
+                        args=(db, selected, row_key, widget_key, current),
                     )
-                    if value != current:
-                        edits.append(confirmation_record(selected, row_key, value))
                     judgment = clean(row.get('판정'))
                     badge_class = {
                         '일치':'matched', '단가차이 확인':'difference',
@@ -1108,17 +1130,6 @@ def render_confirmation_editor(view, db, selected):
                         '<details class="review-details"><summary>상세내역</summary><div class="review-detail-fields">'+detail_html+'</div></details></div>'
                     )
                     content.markdown(html, unsafe_allow_html=True)
-        submitted = st.form_submit_button("변경한 확인결과 저장", type="primary")
-    if submitted:
-        if not edits:
-            st.info("변경된 확인결과가 없습니다.")
-        else:
-            try:
-                db.table("inspection_reviews").upsert(edits, on_conflict="batch_id,row_key").execute()
-                st.session_state['checks_saved']=True
-                st.rerun()
-            except Exception:
-                st.error("저장하지 못했습니다. 다시 시도해 주세요.")
 
 
 def main():
