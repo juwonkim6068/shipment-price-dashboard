@@ -370,12 +370,6 @@ button[kind="primaryFormSubmit"]:hover {
 [data-testid="stTabs"] [data-baseweb="tab-highlight"],[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important;}
 @media(max-width:640px){.st-key-source_selection_panel{padding:14px 16px !important;}.st-key-month_selection_panel{padding:12px 16px !important;}[data-testid="stTabs"] [role="tab"]{padding:10px 8px !important;}[data-testid="stTabs"] [role="tab"] p{font-size:12px !important;}}
 .review-owner{display:inline-block;margin-left:12px;font-size:11px;font-weight:500;color:#6a8099;}
-
-.st-key-workspace_navigation [role="radiogroup"]{display:flex;gap:10px;padding:6px;background:#e9eef5;border:1px solid #dfe6ef;border-radius:12px;margin-bottom:20px;}
-.st-key-workspace_navigation [data-testid="stRadio"] label{flex:1;justify-content:center;min-height:44px;border-radius:9px;padding:8px 18px;}
-.st-key-workspace_navigation [data-testid="stRadio"] label:has(input:checked){background:#fff;box-shadow:0 1px 5px #243e6010;color:#345c8a;}
-.st-key-workspace_navigation [data-testid="stRadio"] label p{font-size:14px;font-weight:650;}
-
 </style>
 """
 
@@ -1374,7 +1368,7 @@ def render_confirmation_editor(view, db, selected):
 
 def main():
     st.set_page_config(
-        page_title="출고·공문 관리",
+        page_title="출고 단가 점검",
         page_icon="📋",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -1386,19 +1380,19 @@ def main():
         """
         <div class="hero">
             <div class="eyebrow">
-                OPERATIONS WORKSPACE
+                MONTH-END PRICE REVIEW
             </div>
             <div class="hero-title">
-                출고·공문 관리
+                출고 단가 점검
             </div>
             <div class="hero-description">
-                단가 점검부터 공문 작성·보관까지,
-                마감 업무를 한곳에서 관리하세요.
+                어떤 출고를 확인해야 하는지 찾고,
+                확인한 결과를 팀과 공유하는 공간입니다.
             </div>
             <div class="steps">
-                <span>출고 단가 점검</span>
-                <span>공문 작성 · PDF</span>
-                <span>수신 공문 보관</span>
+                <span>01 자료 선택</span>
+                <span>02 현황 확인</span>
+                <span>03 출고 찾기</span>
             </div>
         </div>
         """,
@@ -1417,22 +1411,6 @@ def main():
         )
         st.stop()
 
-    try:
-        owners = load_customer_owners(db)
-    except Exception:
-        st.error("담당자 정보를 불러오지 못했습니다. 잠시 후 새로 고침해 주세요.")
-        st.stop()
-    with st.container(key="workspace_navigation"):
-        workspace = st.radio("업무 메뉴", ["출고 단가 점검", "공문 관리"], horizontal=True, key="workspace_menu", label_visibility="collapsed")
-    if workspace == "공문 관리":
-        try:
-            from notice_center import render_notice_workspace
-        except ModuleNotFoundError:
-            st.info("공문 기능에 필요한 서버 설치가 진행되지 않았습니다. 앱 관리에서 Reboot app으로 재시작한 뒤 다시 열어 주세요.")
-            return
-        render_notice_workspace(db, owners)
-        return
-
     section(
         "01",
         "먼저, 검토할 자료를 선택하세요",
@@ -1440,6 +1418,11 @@ def main():
         "새 파일을 받은 경우에만 ‘새 자료 등록하기’를 여세요.",
     )
 
+    try:
+        owners = load_customer_owners(db)
+    except Exception:
+        st.error("담당자 정보를 불러오지 못했습니다. 잠시 후 새로 고침해 주세요.")
+        st.stop()
     render_upload(db, owners)
 
     try:
@@ -1458,7 +1441,6 @@ def main():
         )
         st.stop()
 
-    batches = [item for item in batches if item["title"] != "[시스템] 공문 보관함"]
     if not batches:
         st.info(
             "아직 자료가 없습니다. "
