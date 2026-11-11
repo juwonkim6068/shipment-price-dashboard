@@ -304,6 +304,40 @@ button[kind="primaryFormSubmit"]:hover {
 [data-testid="stColumn"] [data-testid="stForm"] {padding:0 !important;border:0 !important;background:transparent;}
 .shipment-details-gap {height:14px;border-top:1px solid #edf1f6;margin-top:10px;}
 
+
+.review-customer{display:flex;justify-content:space-between;align-items:center;padding:2px 2px 18px;border-bottom:1px solid #edf1f6;margin-bottom:10px}
+.review-customer-code{display:inline-block;background:#eef3fb;color:#5c7291;font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;margin-right:10px}
+.review-customer-name{font-size:15px;color:#20354f;font-weight:750}
+.review-customer-count{font-size:11px;color:#8190a4;background:#f6f8fb;padding:4px 9px;border-radius:12px}
+.review-grid{display:grid;grid-template-columns:minmax(160px,2.3fr) minmax(75px,1fr) repeat(4,minmax(65px,1fr));gap:16px;align-items:center}
+.review-grid-head{color:#8492a5;font-size:11px;padding:8px 0 14px}
+.review-grid-head span:nth-child(n+3){text-align:right}
+.review-column-label{font-size:11px;color:#8492a5;padding:8px 0 14px}
+.review-data-row{padding:16px 0 14px;border-bottom:1px solid #f0f3f8;min-width:0}
+.review-product{display:flex;flex-direction:column;gap:4px;min-width:0}
+.review-product strong{font-size:13px;color:#263c56;font-weight:650;overflow-wrap:anywhere}
+.review-product-code{font-size:11px;color:#647e9d;letter-spacing:.02em}
+.review-meta{font-size:10px;color:#96a2b2;line-height:1.7;overflow-wrap:anywhere}
+.review-destination{font-size:12px;color:#64748b;overflow-wrap:anywhere}
+.review-number{text-align:right;font-size:12px;color:#66768d;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.review-actual{color:#2b4566;font-weight:650}
+.review-difference{color:#b8753b;font-weight:650}
+.review-row-bottom{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.review-badge{font-size:10px;font-weight:600;padding:4px 8px;border-radius:14px;line-height:1.4;background:#f0f3f7;color:#71829a}
+.review-badge.difference{background:#fff2e7;color:#ae6a30}
+.review-badge.reference{background:#f1edfa;color:#7b65a0}
+.review-badge.adjustment{background:#ecf2fa;color:#607c9f}
+.review-badge.matched{background:#edf7f1;color:#508367}
+.review-basis{font-size:10px;color:#8b98aa}
+.review-details{margin-top:8px;color:#8b98aa;font-size:10px}
+.review-details summary{cursor:pointer;display:list-item;width:fit-content}
+.review-detail-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;background:#f7f9fc;border-radius:10px;padding:16px;margin-top:10px}
+.review-detail-fields div{display:flex;flex-direction:column;gap:5px}
+.review-detail-fields span{font-size:10px;color:#8a97a8}
+.review-detail-fields strong{font-size:12px;font-weight:500;color:#4e637e;overflow-wrap:anywhere;white-space:pre-wrap}
+@media(max-width:1000px){.review-grid{grid-template-columns:minmax(130px,2fr) minmax(65px,1fr) repeat(4,minmax(50px,1fr));gap:8px}.review-number{font-size:11px}}
+@media(max-width:640px){.review-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.review-grid-head{display:none}.review-product{grid-column:1 / -1}.review-number{text-align:left}.review-detail-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 </style>
 """
 
@@ -971,73 +1005,117 @@ def confirmation_record(batch_id, row_key, value):
 
 
 def render_confirmation_editor(view, db, selected):
+    """거래처별 부드러운 목록형 표. 확인결과 변경·저장은 그대로 유지합니다."""
+    from html import escape
+    import math
+
     if st.session_state.pop("checks_saved", False):
         st.success("확인 여부를 저장했습니다.")
     if view.empty:
         st.info("조회된 출고가 없습니다.")
         return
-    cols = [
-        "확인결과", "코드", "거래처명", "납품처명", "품번", "품명", "기준구분", "판정",
-        "규격", "출고일자", "출고번호", "순번", "출고수량",
-        "단가", "기준단가", "단가차이", "차이금액", "차이규모",
-        "처리결과", "기준정보주의", "확인사유", "담당자",
-    ]
-    cols = [col for col in cols if col in view.columns]
-    source = view.set_index("행키")[cols].copy()
-    display = source.copy()
-    group_cols = [col for col in ["코드", "거래처명"] if col in display.columns]
-    if group_cols:
-        repeated = display.duplicated(group_cols)
-        display.loc[repeated, group_cols] = ""
-    snapshot = json.dumps(
-        list(zip(source.index.tolist(), source["확인결과"].tolist())),
-        ensure_ascii=False,
-    )
-    editor_key = f"shipment_checks_{selected}_" + hashlib.sha256(snapshot.encode()).hexdigest()[:16]
-    st.caption("거래처코드·거래처명은 묶음 첫 행에 표시합니다. 확인결과를 바꾼 뒤 저장하세요.")
-    config = {
-        "확인결과": st.column_config.SelectboxColumn(
-            "확인결과", options=["미확인", "확인"], required=True, width="small"
-        ),
-        "코드": st.column_config.TextColumn("거래처코드", width="small"),
-        "거래처명": st.column_config.TextColumn("거래처명", width="medium"),
-        "납품처명": st.column_config.TextColumn("납품처명", width="medium"),
-        "기준구분": st.column_config.TextColumn("적용 기준", width="medium"),
-        "품번": st.column_config.TextColumn("품목코드", width="small"),
-        "품명": st.column_config.TextColumn("품목명", width="medium"),
-        "판정": st.column_config.TextColumn("자동 판정", width="medium"),
-        "처리결과": st.column_config.TextColumn("상세 처리결과", width="medium"),
-        "기준정보주의": st.column_config.TextColumn("기준정보 주의사항", width="large"),
-        "확인사유": st.column_config.TextColumn("확인사유", width="large"),
-    }
-    for col in ["출고수량", "단가", "기준단가", "단가차이", "차이금액", "차이규모"]:
-        config[col] = st.column_config.NumberColumn(col, format="%.2f")
-    with st.form(f"checks_form_{editor_key}"):
-        edited = st.data_editor(
-            display,
-            key=editor_key,
-            use_container_width=True,
-            hide_index=True,
-            height=480,
-            num_rows="fixed",
-            disabled=[col for col in cols if col != "확인결과"],
-            column_config=config,
+    count = len(view)
+    search_identity = hashlib.sha256("|".join(view["행키"].astype(str)).encode()).hexdigest()[:12]
+    pages = math.ceil(count / 20)
+    page = 1
+    if pages > 1:
+        page = st.selectbox(
+            "조회 페이지", list(range(1, pages + 1)),
+            format_func=lambda value: f"{value} / {pages} 페이지 · 20건씩",
+            key=f"review_page_{selected}_{search_identity}",
         )
+    visible = view.iloc[(page - 1) * 20:page * 20]
+    snapshot = json.dumps(list(zip(visible["행키"], visible["확인결과"])), ensure_ascii=False)
+    form_identity = hashlib.sha256(snapshot.encode()).hexdigest()[:16]
+    st.caption("확인결과 변경 후 저장하세요.")
+
+    def clean(value):
+        if value is None or pd.isna(value) or str(value).strip() == "":
+            return "—"
+        return str(value)
+
+    def text(value):
+        return escape(clean(value))
+
+    def money(value):
+        if value is None or pd.isna(value):
+            return "—"
+        return f"{float(value):,.2f}"
+
+    edits = []
+    with st.form(f"soft_checks_{selected}_{form_identity}"):
+        groups = [col for col in ["코드", "거래처명"] if col in visible.columns]
+        grouped = visible.groupby(groups, sort=False, dropna=False) if groups else [(('', ''), visible)]
+        for identity, rows in grouped:
+            if not isinstance(identity, tuple):identity=(identity, '')
+            customer_code, customer_name = (list(identity) + ['',''])[:2]
+            with st.container(border=True):
+                st.markdown(
+                    '<div class="review-customer"><div><span class="review-customer-code">'
+                    + text(customer_code) + '</span><span class="review-customer-name">'
+                    + text(customer_name) + '</span></div><span class="review-customer-count">'
+                    + f'{len(rows):,}건' + '</span></div>',
+                    unsafe_allow_html=True,
+                )
+                left, right = st.columns([0.8, 6.5])
+                left.markdown('<div class="review-column-label">확인결과</div>', unsafe_allow_html=True)
+                right.markdown(
+                    '<div class="review-grid review-grid-head"><span>품목 · 출고내역</span><span>납품처</span><span>수량</span><span>기준단가</span><span>출고단가</span><span>차이규모</span></div>',
+                    unsafe_allow_html=True,
+                )
+                for row in rows.to_dict('records'):
+                    row_key = row['행키']
+                    state, content = st.columns([0.8, 6.5], vertical_alignment='center')
+                    current = row.get('확인결과', '미확인')
+                    value = state.selectbox(
+                        f"확인결과 · {row.get('출고번호', '')} / {row.get('순번', '')}",
+                        ['미확인', '확인'], index=1 if current == '확인' else 0,
+                        key=f"soft_check_{selected}_{form_identity}_{row_key}",
+                        label_visibility='collapsed',
+                    )
+                    if value != current:
+                        edits.append(confirmation_record(selected, row_key, value))
+                    judgment = clean(row.get('판정'))
+                    badge_class = {
+                        '일치':'matched', '단가차이 확인':'difference',
+                        '기준단가 확인':'reference', '조정·반품 확인':'adjustment',
+                    }.get(judgment, 'neutral')
+                    date = clean(row.get('출고일자'))
+                    if len(date)==8 and date.isdigit():date=f'{date[:4]}.{date[4:6]}.{date[6:]}'
+                    subtitle = ' · '.join([date, clean(row.get('출고번호')), clean(row.get('순번'))])
+                    detail_fields = [
+                        ('품목코드',row.get('품번')),('품목명',row.get('품명')),
+                        ('규격',row.get('규격')),('납품처명',row.get('납품처명')),
+                        ('적용 기준',row.get('기준구분')),('단가차이',money(row.get('단가차이'))),
+                        ('차이금액',money(row.get('차이금액'))),
+                        ('기준정보 주의',row.get('기준정보주의')),
+                        ('상세 처리결과',row.get('처리결과')),
+                        ('확인사유',row.get('확인사유')),('담당자',row.get('담당자')),
+                    ]
+                    detail_html=''.join('<div><span>'+escape(label)+'</span><strong>'+text(val)+'</strong></div>' for label,val in detail_fields)
+                    html = (
+                        '<div class="review-data-row"><div class="review-grid">'
+                        '<div class="review-product"><strong>'+text(row.get('품명'))+'</strong>'
+                        '<span class="review-product-code">'+text(row.get('품번'))+'</span>'
+                        '<span class="review-meta">'+escape(subtitle)+'</span></div>'
+                        '<div class="review-destination">'+text(row.get('납품처명'))+'</div>'
+                        '<div class="review-number">'+money(row.get('출고수량'))+'</div>'
+                        '<div class="review-number">'+money(row.get('기준단가'))+'</div>'
+                        '<div class="review-number review-actual">'+money(row.get('단가'))+'</div>'
+                        '<div class="review-number review-difference">'+money(row.get('차이규모'))+'</div></div>'
+                        '<div class="review-row-bottom"><span class="review-badge '+badge_class+'">'+escape(judgment)+'</span>'
+                        '<span class="review-basis">'+text(row.get('기준구분'))+'</span></div>'
+                        '<details class="review-details"><summary>상세내역</summary><div class="review-detail-fields">'+detail_html+'</div></details></div>'
+                    )
+                    content.markdown(html, unsafe_allow_html=True)
         submitted = st.form_submit_button("변경한 확인결과 저장", type="primary")
     if submitted:
-        updates = []
-        for key, row in edited.iterrows():
-            value = row["확인결과"]
-            if value in ["미확인", "확인"] and value != source.loc[key, "확인결과"]:
-                updates.append(confirmation_record(selected, key, value))
-        if not updates:
+        if not edits:
             st.info("변경된 확인결과가 없습니다.")
         else:
             try:
-                db.table("inspection_reviews").upsert(
-                    updates, on_conflict="batch_id,row_key"
-                ).execute()
-                st.session_state["checks_saved"] = True
+                db.table("inspection_reviews").upsert(edits, on_conflict="batch_id,row_key").execute()
+                st.session_state['checks_saved']=True
                 st.rerun()
             except Exception:
                 st.error("저장하지 못했습니다. 다시 시도해 주세요.")
@@ -1655,3 +1733,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
