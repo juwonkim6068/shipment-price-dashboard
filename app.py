@@ -740,33 +740,6 @@ def parse_customer_owners(frame):
     return dict(zip(frame["코드"], frame["담당자"])), deleted
 
 
-def render_owner_management(db, selected, owners):
-    with st.expander("거래처 담당자 관리", expanded=not bool(owners)):
-        st.caption("담당자 파일을 한 번 등록하면 기존·신규 자료에 공통 적용됩니다. 파일에 없는 기존 담당자는 유지합니다.")
-        upload = st.file_uploader("거래처 담당자 파일", type=["xls", "xlsx"], key="customer_owner_upload")
-        if upload and st.button("담당자 등록·갱신", key="save_customer_owners"):
-            try:
-                mapping, deleted = parse_customer_owners(read_excel(upload))
-                records = [
-                    {"batch_id": selected, "row_key": "owner:v1:" + code,
-                     "status": "확인 중", "reason": owner, "reviewer": ""}
-                    for code, owner in mapping.items()
-                ]
-                db.table("inspection_reviews").upsert(records, on_conflict="batch_id,row_key").execute()
-                st.session_state["owner_import_notice"] = (len(mapping), deleted)
-                st.rerun()
-            except ValueError as exc:
-                st.error(str(exc))
-            except Exception:
-                st.error("담당자를 저장하지 못했습니다. 다시 시도해 주세요.")
-        notice = st.session_state.pop("owner_import_notice", None)
-        if notice:
-            st.success(f"담당자 {notice[0]:,}개 코드 등록 완료 · 삭제 표기 {notice[1]:,}건은 미지정 처리")
-        if owners:
-            names = pd.Series(list(owners.values()), dtype=str).value_counts()
-            st.caption("등록 현황 · " + " / ".join(f"{name} {count:,}개" for name, count in names.items()))
-
-
 def upload_fingerprint(price_bytes, shipment_bytes, tolerance):
     parts = [hashlib.sha256(price_bytes).hexdigest(), hashlib.sha256(shipment_bytes).hexdigest(), str(float(tolerance))]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
@@ -1558,8 +1531,6 @@ def main():
             "잠시 후 다시 시도해 주세요."
         )
         st.stop()
-
-    render_owner_management(db, selected, owners)
 
     data = pd.DataFrame(batch["results"])
 
