@@ -1425,7 +1425,11 @@ def main():
     with st.container(key="workspace_navigation"):
         workspace = st.radio("업무 메뉴", ["출고 단가 점검", "공문 관리"], horizontal=True, key="workspace_menu", label_visibility="collapsed")
     if workspace == "공문 관리":
-        from notice_center import render_notice_workspace
+        try:
+            from notice_center import render_notice_workspace
+        except ModuleNotFoundError:
+            st.info("공문 기능에 필요한 서버 설치가 진행되지 않았습니다. 앱 관리에서 Reboot app으로 재시작한 뒤 다시 열어 주세요.")
+            return
         render_notice_workspace(db, owners)
         return
 
