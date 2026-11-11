@@ -1,0 +1,3 @@
+libreoffice-writer
+libreoffice-core-nogui
+fonts-noto-cjk
