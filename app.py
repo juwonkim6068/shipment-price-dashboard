@@ -346,6 +346,27 @@ button[kind="primaryFormSubmit"]:hover {
 
 [class*="st-key-review_row_"] [data-testid="stSelectbox"] {margin-top:16px;}
 [class*="st-key-shipment_opinion_"] textarea {background:rgba(255,255,255,.85);border-radius:8px;font-size:12px;}
+
+/* 자료 등록과 조회 설정을 선명하게 구분합니다. */
+.st-key-source_upload_panel [data-testid="stExpander"]{border:1px solid #285fd1 !important;border-radius:14px;box-shadow:0 5px 15px #245bd714;}
+.st-key-source_upload_panel summary{background:linear-gradient(100deg,#1b48ac,#306bdd) !important;min-height:66px;padding:18px 20px !important;}
+.st-key-source_upload_panel summary p,.st-key-source_upload_panel summary span,.st-key-source_upload_panel summary svg{color:#fff !important;fill:currentColor;font-size:15px !important;font-weight:700 !important;}
+.st-key-source_selection_panel{background:#fff !important;border:1px solid #cad7ed !important;border-left:5px solid #285fd1 !important;border-radius:14px;padding:22px !important;box-shadow:0 5px 18px #1b3a6608;}
+.st-key-source_selection_panel [data-testid="stWidgetLabel"] p,.st-key-month_selection_panel [data-testid="stWidgetLabel"] p{color:#1f3e67 !important;font-size:13px !important;font-weight:700 !important;}
+.st-key-source_selection_panel [data-baseweb="select"]>div{background:#f1f6ff !important;border:1.5px solid #a9c0ed !important;min-height:48px;}
+.st-key-source_selection_panel [data-baseweb="select"] span{font-size:14px;color:#203d67;}
+.st-key-source_selection_panel [data-testid="stCaptionContainer"]{color:#647b98 !important;}
+.st-key-month_selection_panel{background:#fff !important;border:1px solid #d4deed !important;border-radius:12px;padding:16px 20px !important;}
+.st-key-month_selection_panel [data-baseweb="select"]>div{background:#f7faff !important;border-color:#bacce7 !important;}
+/* 접근성 역할 속성을 사용해 탭 스타일을 안정적으로 적용합니다. */
+[data-testid="stTabs"] [role="tablist"]{display:flex;gap:10px !important;background:#e3eaf5 !important;padding:7px !important;border:1px solid #d4dfef !important;border-radius:14px !important;margin-top:22px !important;margin-bottom:14px !important;flex-wrap:wrap;}
+[data-testid="stTabs"] [role="tab"]{flex:1 !important;min-height:52px !important;height:auto !important;padding:14px 22px !important;border:0 !important;border-radius:10px !important;background:transparent !important;color:#526c8c !important;justify-content:center !important;font-weight:700 !important;}
+[data-testid="stTabs"] [role="tab"] p{font-size:15px !important;font-weight:700 !important;color:inherit !important;}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"]{background:#245bd7 !important;color:#fff !important;box-shadow:0 4px 12px #245bd726 !important;}
+[data-testid="stTabs"] [role="tab"][aria-selected="false"]:hover{background:#d5e2f6 !important;color:#244b83 !important;}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"],[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important;}
+@media(max-width:640px){.st-key-source_selection_panel{padding:16px !important;}.st-key-month_selection_panel{padding:12px 16px !important;}[data-testid="stTabs"] [role="tab"]{padding:12px 10px !important;}[data-testid="stTabs"] [role="tab"] p{font-size:13px !important;}}
+
 </style>
 """
 
@@ -680,113 +701,114 @@ def export_excel(frame):
 
 
 def render_upload(db):
-    with st.expander(
-        "＋ 새 자료 등록하기 · 처음 이용하거나 새 엑셀을 받았을 때",
-        expanded=False,
-    ):
-        st.info(
-            "① 통합단가 선택 → ② 출고현황 선택 → "
-            "③ 등록 이름 확인 → ‘검증하고 공유 저장’ 클릭"
-        )
-
-        today = datetime.now(
-            ZoneInfo("Asia/Seoul")
-        ).strftime("%Y-%m-%d")
-
-        title = st.text_input(
-            "등록 이름",
-            value=f"{today} 단가 점검",
-            help="예: 2026년 11월 마감 · 11월 10일 기준",
-        )
-
-        p, s = st.columns(2)
-
-        price_file = p.file_uploader(
-            "① 통합단가 · 거래처·납품처별 판매단가",
-            type=["xls", "xlsx"],
-        )
-
-        shipment_file = s.file_uploader(
-            "② 출고현황 · 실제 출고된 내역",
-            type=["xls", "xlsx"],
-        )
-
-        tolerance = st.number_input(
-            "허용할 단가 차이(원)",
-            min_value=0.0,
-            value=0.01,
-            step=0.01,
-            format="%.4f",
-            help=(
-                "이 금액을 초과하는 단가 차이를 "
-                "확인 대상으로 분류합니다."
-            ),
-        )
-
-        st.caption(
-            "기존 자료는 삭제되지 않습니다. "
-            "같은 파일을 다시 저장해도 별도 자료로 등록됩니다."
-        )
-
-        if st.button(
-            "③ 검증하고 공유 저장",
-            type="primary",
+    with st.container(key="source_upload_panel"):
+        with st.expander(
+            "＋ 새 엑셀 등록 · 통합단가와 출고현황 업로드",
+            expanded=False,
         ):
-            if not price_file or not shipment_file:
-                st.warning(
-                    "통합단가와 출고현황 파일을 모두 선택해 주세요."
-                )
+            st.info(
+                "① 통합단가 선택 → ② 출고현황 선택 → "
+                "③ 등록 이름 확인 → ‘검증하고 공유 저장’ 클릭"
+            )
 
-            elif not title.strip():
-                st.warning("등록 이름을 입력해 주세요.")
+            today = datetime.now(
+                ZoneInfo("Asia/Seoul")
+            ).strftime("%Y-%m-%d")
 
-            else:
-                try:
-                    with st.spinner(
-                        "단가를 비교하고 저장하고 있습니다."
-                    ):
-                        result = validate(
-                            read_excel(price_file),
-                            read_excel(shipment_file),
-                            tolerance,
-                        )
+            title = st.text_input(
+                "등록 이름",
+                value=f"{today} 단가 점검",
+                help="예: 2026년 11월 마감 · 11월 10일 기준",
+            )
 
-                        response = (
-                            db.table("inspection_batches")
-                            .insert({
-                                "title": title.strip(),
-                                "shipment_filename": (
-                                    shipment_file.name
-                                ),
-                                "price_filename": price_file.name,
-                                "results": json.loads(
-                                    result.to_json(
-                                        orient="records",
-                                        force_ascii=False,
-                                        double_precision=15,
-                                    )
-                                ),
-                            })
-                            .execute()
-                        )
+            p, s = st.columns(2)
 
-                        st.session_state["batch_id"] = (
-                            response.data[0]["id"]
-                        )
+            price_file = p.file_uploader(
+                "① 통합단가 · 거래처·납품처별 판매단가",
+                type=["xls", "xlsx"],
+            )
 
-                    st.success(
-                        "등록 완료 · 아래 ‘검토할 자료’에서 "
-                        "결과를 확인하세요."
+            shipment_file = s.file_uploader(
+                "② 출고현황 · 실제 출고된 내역",
+                type=["xls", "xlsx"],
+            )
+
+            tolerance = st.number_input(
+                "허용할 단가 차이(원)",
+                min_value=0.0,
+                value=0.01,
+                step=0.01,
+                format="%.4f",
+                help=(
+                    "이 금액을 초과하는 단가 차이를 "
+                    "확인 대상으로 분류합니다."
+                ),
+            )
+
+            st.caption(
+                "기존 자료는 삭제되지 않습니다. "
+                "같은 파일을 다시 저장해도 별도 자료로 등록됩니다."
+            )
+
+            if st.button(
+                "③ 검증하고 공유 저장",
+                type="primary",
+            ):
+                if not price_file or not shipment_file:
+                    st.warning(
+                        "통합단가와 출고현황 파일을 모두 선택해 주세요."
                     )
 
-                except ValueError as exc:
-                    st.error(str(exc))
+                elif not title.strip():
+                    st.warning("등록 이름을 입력해 주세요.")
 
-                except Exception:
-                    st.error(
-                        "등록하지 못했습니다. "
-                        "파일 형식과 서버 연결을 확인해 주세요."
-                    )
+                else:
+                    try:
+                        with st.spinner(
+                            "단가를 비교하고 저장하고 있습니다."
+                        ):
+                            result = validate(
+                                read_excel(price_file),
+                                read_excel(shipment_file),
+                                tolerance,
+                            )
+
+                            response = (
+                                db.table("inspection_batches")
+                                .insert({
+                                    "title": title.strip(),
+                                    "shipment_filename": (
+                                        shipment_file.name
+                                    ),
+                                    "price_filename": price_file.name,
+                                    "results": json.loads(
+                                        result.to_json(
+                                            orient="records",
+                                            force_ascii=False,
+                                            double_precision=15,
+                                        )
+                                    ),
+                                })
+                                .execute()
+                            )
+
+                            st.session_state["batch_id"] = (
+                                response.data[0]["id"]
+                            )
+
+                        st.success(
+                            "등록 완료 · 아래 ‘검토할 자료’에서 "
+                            "결과를 확인하세요."
+                        )
+
+                    except ValueError as exc:
+                        st.error(str(exc))
+
+                    except Exception:
+                        st.error(
+                            "등록하지 못했습니다. "
+                            "파일 형식과 서버 연결을 확인해 주세요."
+                        )
 
 
 def build_price_cards(diff):
@@ -1295,14 +1317,14 @@ def main():
     ids = list(batch_map)
     current = st.session_state.get("batch_id")
 
-    with st.container(border=True):
+    with st.container(border=True, key="source_selection_panel"):
         a, b = st.columns(
             [5, 1],
             vertical_alignment="bottom",
         )
 
         selected = a.selectbox(
-            "검토할 자료",
+            "현재 검토할 자료",
             ids,
             index=(
                 ids.index(current)
@@ -1316,6 +1338,7 @@ def main():
 
         if b.button(
             "최신 내용 불러오기",
+            type="primary",
             use_container_width=True,
         ):
             st.rerun()
@@ -1326,9 +1349,7 @@ def main():
         ).tz_convert("Asia/Seoul")
 
         st.caption(
-            f"등록 {created:%Y.%m.%d %H:%M} · "
-            "다른 직원이 저장한 기록은 "
-            "‘최신 내용 불러오기’로 반영됩니다."
+            f"등록 {created:%Y.%m.%d %H:%M} · 팀원의 최신 기록은 오른쪽 버튼으로 갱신"
         )
 
     try:
@@ -1415,14 +1436,15 @@ def main():
         for key, status in zip(data["행키"], data["처리결과"])
     ]
 
-    month = st.selectbox(
-        "확인할 출고월 · 아래 모든 화면에 적용",
-        ["전체"]
-        + sorted(
-            data["출고월"].dropna().unique().tolist()
-        ),
-        key=f"month_{selected}",
-    )
+    with st.container(border=True, key="month_selection_panel"):
+        month = st.selectbox(
+            "조회할 출고월",
+            ["전체"]
+            + sorted(
+                data["출고월"].dropna().unique().tolist()
+            ),
+            key=f"month_{selected}",
+        )
 
     monthly = (
         data
@@ -1452,8 +1474,8 @@ def main():
     ]
 
     tabs = st.tabs([
-        "② 전체 현황 · 무엇이 문제인가요?",
-        "③ 출고 찾기 · 어떤 건을 볼까요?",
+        "② 점검 현황",
+        "③ 출고 상세 · 확인",
     ])
 
     with tabs[0]:
