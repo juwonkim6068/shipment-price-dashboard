@@ -1441,6 +1441,8 @@ def main():
         )
         st.stop()
 
+    batches = [item for item in batches if item["title"] != "[시스템] 공문 보관함"]
+
     if not batches:
         st.info(
             "아직 자료가 없습니다. "
