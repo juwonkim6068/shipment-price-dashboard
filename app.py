@@ -344,6 +344,8 @@ button[kind="primaryFormSubmit"]:hover {
 [class*="st-key-review_card_confirmed_"] .review-customer {border-bottom-color:#d5e5d9;}
 [class*="st-key-review_card_partial_"] [class*="st-key-review_row_confirmed_"] {background:#eaf4ee;border-radius:10px;}
 
+[class*="st-key-review_row_"] [data-testid="stSelectbox"] {margin-top:16px;}
+[class*="st-key-shipment_opinion_"] textarea {background:rgba(255,255,255,.85);border-radius:8px;font-size:12px;}
 </style>
 """
 
@@ -1030,11 +1032,73 @@ def auto_save_confirmation(db, batch_id, row_key, widget_key, previous):
         }
 
 
+def opinion_key(row_key):
+    return "opinion:v1:" + str(row_key)
+
+
+def auto_save_opinion(db, batch_id, row_key, widget_key, previous):
+    value = st.session_state.get(widget_key, previous)
+    error_key = f"{batch_id}:{row_key}"
+    errors = dict(st.session_state.get("opinion_autosave_errors", {}))
+    if value == previous:
+        errors.pop(error_key, None)
+        st.session_state["opinion_autosave_errors"] = errors
+        return
+    try:
+        db.table("inspection_reviews").upsert(
+            {
+                "batch_id": batch_id,
+                "row_key": opinion_key(row_key),
+                "status": "확인 중",
+                "reason": value,
+                "reviewer": "",
+            },
+            on_conflict="batch_id,row_key",
+        ).execute()
+        errors.pop(error_key, None)
+        st.session_state["opinion_autosave_errors"] = errors
+        st.session_state["opinion_autosave_notice"] = batch_id
+    except Exception:
+        errors[error_key] = {"value": value}
+        st.session_state["opinion_autosave_errors"] = errors
+
+
+def render_opinion_input(container, row, db, selected):
+    row_key = row["행키"]
+    saved = row.get("의견/설명", "")
+    if saved is None or pd.isna(saved):
+        saved = ""
+    saved = str(saved)
+    revision = hashlib.sha256(saved.encode()).hexdigest()[:12]
+    widget_key = f"shipment_opinion_{selected}_{row_key}_{revision}"
+    failure = st.session_state.get("opinion_autosave_errors", {}).get(f"{selected}:{row_key}")
+    container.text_area(
+        "의견/설명",
+        value=failure["value"] if failure else saved,
+        placeholder="확인 내용이나 의견을 입력하세요",
+        height=70, max_chars=2000,
+        key=widget_key,
+        on_change=auto_save_opinion,
+        args=(db, selected, row_key, widget_key, saved),
+        help="입력 후 다른 곳을 클릭하면 자동 저장됩니다.",
+    )
+    if failure:
+        container.error("의견을 저장하지 못했습니다. 작성한 내용은 유지됩니다.")
+        container.button(
+            "의견 저장 다시 시도",
+            key=f"retry_opinion_{selected}_{row_key}",
+            on_click=auto_save_opinion,
+            args=(db, selected, row_key, widget_key, saved),
+        )
+
+
 def render_confirmation_editor(view, db, selected):
     """거래처별 부드러운 목록형 표. 확인결과 변경·저장은 그대로 유지합니다."""
     from html import escape
     import math
 
+    if st.session_state.pop("opinion_autosave_notice", None) == selected:
+        st.toast("의견/설명 자동 저장 완료", icon="✅")
     notice = st.session_state.pop("confirmation_autosave_notice", None)
     if notice and notice.get("batch_id") == selected:
         if notice.get("ok"):
@@ -1055,7 +1119,7 @@ def render_confirmation_editor(view, db, selected):
             key=f"review_page_{selected}_{search_identity}",
         )
     visible = view.iloc[(page - 1) * 20:page * 20]
-    st.caption("확인결과는 변경 즉시 자동 저장됩니다.")
+    st.caption("확인결과 즉시 저장 · 의견/설명은 입력 후 다른 곳을 클릭하면 저장됩니다.")
 
     def clean(value):
         if value is None or pd.isna(value) or str(value).strip() == "":
@@ -1099,7 +1163,7 @@ def render_confirmation_editor(view, db, selected):
                     current = row.get('확인결과', '미확인')
                     row_status = 'confirmed' if current == '확인' else 'pending'
                     with st.container(key=f"review_row_{row_status}_{selected}_{row_key}"):
-                        state, content = st.columns([0.8, 6.5], vertical_alignment='center')
+                        state, content = st.columns([0.8, 6.5], vertical_alignment='top')
                         widget_key = f"auto_check_{selected}_{row_key}_{current}"
                         state.selectbox(
                             f"확인결과 · {row.get('출고번호', '')} / {row.get('순번', '')}",
@@ -1142,6 +1206,7 @@ def render_confirmation_editor(view, db, selected):
                             '<details class="review-details"><summary>상세내역</summary><div class="review-detail-fields">'+detail_html+'</div></details></div>'
                         )
                         content.markdown(html, unsafe_allow_html=True)
+                        render_opinion_input(content, row, db, selected)
 
 
 def main():
@@ -1340,6 +1405,10 @@ def main():
             )
         )
 
+    data["의견/설명"] = [
+        review_map.get(opinion_key(key), {}).get("reason", previous or "")
+        for key, previous in zip(data["행키"], data["확인사유"])
+    ]
     data["처리결과"] = data["확인결과"]
     data["확인결과"] = [
         confirmation_value(key, status, review_map)
