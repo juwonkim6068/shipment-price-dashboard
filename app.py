@@ -347,26 +347,28 @@ button[kind="primaryFormSubmit"]:hover {
 [class*="st-key-review_row_"] [data-testid="stSelectbox"] {margin-top:16px;}
 [class*="st-key-shipment_opinion_"] textarea {background:rgba(255,255,255,.85);border-radius:8px;font-size:12px;}
 
-/* 자료 등록과 조회 설정을 선명하게 구분합니다. */
-.st-key-source_upload_panel [data-testid="stExpander"]{border:1px solid #285fd1 !important;border-radius:14px;box-shadow:0 5px 15px #245bd714;}
-.st-key-source_upload_panel summary{background:linear-gradient(100deg,#1b48ac,#306bdd) !important;min-height:66px;padding:18px 20px !important;}
-.st-key-source_upload_panel summary p,.st-key-source_upload_panel summary span,.st-key-source_upload_panel summary svg{color:#fff !important;fill:currentColor;font-size:15px !important;font-weight:700 !important;}
-.st-key-source_selection_panel{background:#fff !important;border:1px solid #cad7ed !important;border-left:5px solid #285fd1 !important;border-radius:14px;padding:22px !important;box-shadow:0 5px 18px #1b3a6608;}
-.st-key-source_selection_panel [data-testid="stWidgetLabel"] p,.st-key-month_selection_panel [data-testid="stWidgetLabel"] p{color:#1f3e67 !important;font-size:13px !important;font-weight:700 !important;}
-.st-key-source_selection_panel [data-baseweb="select"]>div{background:#f1f6ff !important;border:1.5px solid #a9c0ed !important;min-height:48px;}
-.st-key-source_selection_panel [data-baseweb="select"] span{font-size:14px;color:#203d67;}
-.st-key-source_selection_panel [data-testid="stCaptionContainer"]{color:#647b98 !important;}
-.st-key-month_selection_panel{background:#fff !important;border:1px solid #d4deed !important;border-radius:12px;padding:16px 20px !important;}
-.st-key-month_selection_panel [data-baseweb="select"]>div{background:#f7faff !important;border-color:#bacce7 !important;}
-/* 접근성 역할 속성을 사용해 탭 스타일을 안정적으로 적용합니다. */
-[data-testid="stTabs"] [role="tablist"]{display:flex;gap:10px !important;background:#e3eaf5 !important;padding:7px !important;border:1px solid #d4dfef !important;border-radius:14px !important;margin-top:22px !important;margin-bottom:14px !important;flex-wrap:wrap;}
-[data-testid="stTabs"] [role="tab"]{flex:1 !important;min-height:52px !important;height:auto !important;padding:14px 22px !important;border:0 !important;border-radius:10px !important;background:transparent !important;color:#526c8c !important;justify-content:center !important;font-weight:700 !important;}
-[data-testid="stTabs"] [role="tab"] p{font-size:15px !important;font-weight:700 !important;color:inherit !important;}
-[data-testid="stTabs"] [role="tab"][aria-selected="true"]{background:#245bd7 !important;color:#fff !important;box-shadow:0 4px 12px #245bd726 !important;}
-[data-testid="stTabs"] [role="tab"][aria-selected="false"]:hover{background:#d5e2f6 !important;color:#244b83 !important;}
+/* 옅은 색과 얇은 경계로 자료 설정과 화면 전환을 구분합니다. */
+.st-key-source_upload_panel [data-testid="stExpander"]{border:1px solid #dbe3ef !important;border-radius:12px;box-shadow:none;}
+.st-key-source_upload_panel summary{background:#f5f8fd !important;min-height:54px;padding:13px 18px !important;}
+.st-key-source_upload_panel summary p,.st-key-source_upload_panel summary span,.st-key-source_upload_panel summary svg{color:#426286 !important;fill:currentColor;font-size:14px !important;font-weight:600 !important;}
+.st-key-source_upload_panel summary:hover{background:#eef3fa !important;}
+.st-key-source_selection_panel{background:#fff !important;border:1px solid #e0e6ef !important;border-radius:12px;padding:18px 20px !important;box-shadow:0 2px 10px #1b3a6603;}
+.st-key-source_selection_panel [data-testid="stWidgetLabel"] p,.st-key-month_selection_panel [data-testid="stWidgetLabel"] p{color:#4c6079 !important;font-size:12px !important;font-weight:600 !important;}
+.st-key-source_selection_panel [data-baseweb="select"]>div{background:#f8fafc !important;border:1px solid #dce4ee !important;border-radius:8px;min-height:44px;}
+.st-key-source_selection_panel [data-baseweb="select"]>div:focus-within{border-color:#9cb1cf !important;box-shadow:0 0 0 2px #eaf0f8;}
+.st-key-source_selection_panel [data-baseweb="select"] span{font-size:13px;color:#344c68;}
+.st-key-source_selection_panel [data-testid="stCaptionContainer"]{color:#8997a9 !important;font-size:11px;}
+.st-key-source_selection_panel button[kind="primary"]{background:#edf2fa !important;border:1px solid #dae3f1 !important;color:#426286 !important;min-height:44px;border-radius:8px;box-shadow:none;}
+.st-key-source_selection_panel button[kind="primary"]:hover{background:#e3ebf7 !important;border-color:#c4d2e7 !important;}
+.st-key-month_selection_panel{background:#fff !important;border:1px solid #e3e8f0 !important;border-radius:12px;padding:14px 20px !important;}
+.st-key-month_selection_panel [data-baseweb="select"]>div{background:#f9fafc !important;border:1px solid #e1e6ef !important;border-radius:8px;}
+[data-testid="stTabs"] [role="tablist"]{display:flex;gap:4px !important;background:#edf1f6 !important;padding:4px !important;border:1px solid #e3e8f0 !important;border-radius:11px !important;margin-top:20px !important;margin-bottom:14px !important;flex-wrap:wrap;}
+[data-testid="stTabs"] [role="tab"]{flex:1 !important;min-height:44px !important;height:auto !important;padding:10px 18px !important;border:0 !important;border-radius:8px !important;background:transparent !important;color:#7b899d !important;justify-content:center !important;font-weight:600 !important;}
+[data-testid="stTabs"] [role="tab"] p{font-size:13px !important;font-weight:600 !important;color:inherit !important;}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"]{background:#fff !important;color:#355a86 !important;box-shadow:0 1px 5px #203a5b0d !important;}
+[data-testid="stTabs"] [role="tab"][aria-selected="false"]:hover{background:#f6f8fb !important;color:#4e6786 !important;}
 [data-testid="stTabs"] [data-baseweb="tab-highlight"],[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important;}
-@media(max-width:640px){.st-key-source_selection_panel{padding:16px !important;}.st-key-month_selection_panel{padding:12px 16px !important;}[data-testid="stTabs"] [role="tab"]{padding:12px 10px !important;}[data-testid="stTabs"] [role="tab"] p{font-size:13px !important;}}
-
+@media(max-width:640px){.st-key-source_selection_panel{padding:14px 16px !important;}.st-key-month_selection_panel{padding:12px 16px !important;}[data-testid="stTabs"] [role="tab"]{padding:10px 8px !important;}[data-testid="stTabs"] [role="tab"] p{font-size:12px !important;}}
 </style>
 """
 
