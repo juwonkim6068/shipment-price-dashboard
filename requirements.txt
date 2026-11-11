@@ -1,3 +1,4 @@
+# Dashboard and private DOCX/PDF notice workspace
 streamlit>=1.40,<2
 pandas>=2.2,<3
 xlrd==2.0.1
