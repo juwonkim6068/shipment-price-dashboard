@@ -339,13 +339,10 @@ button[kind="primaryFormSubmit"]:hover {
 @media(max-width:640px){.review-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.review-grid-head{display:none}.review-product{grid-column:1 / -1}.review-number{text-align:left}.review-detail-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 
-[class*="st-key-review_confirmed_"]{background:#edf7f1;border-left:3px solid #73af8b;border-radius:11px;padding:0 12px;margin:5px 0;transition:background .15s ease;}
-[class*="st-key-review_pending_"]{background:#ffffff;border-left:3px solid #e6ebf2;border-radius:11px;padding:0 12px;margin:5px 0;}
-[class*="st-key-review_confirmed_"] .review-data-row,[class*="st-key-review_pending_"] .review-data-row{border-bottom:0;}
-.review-confirmation-badge{display:inline-flex;align-items:center;font-size:10px;font-weight:700;line-height:1.4;padding:4px 9px;border-radius:14px;}
-.review-confirmation-badge.confirmed{background:#d5ebde;color:#2b6a48;}
-.review-confirmation-badge.pending{background:#f0f3f7;color:#7c899a;}
-[class*="st-key-review_confirmed_"] [data-baseweb="select"]>div{background:#f5fbf7;border-color:#a9cfb7;}
+
+[class*="st-key-review_card_confirmed_"] {background:#eaf4ee !important;border-color:#cadfd0 !important;border-radius:14px;}
+[class*="st-key-review_card_confirmed_"] .review-customer {border-bottom-color:#d5e5d9;}
+[class*="st-key-review_card_partial_"] [class*="st-key-review_row_confirmed_"] {background:#eaf4ee;border-radius:10px;}
 
 </style>
 """
@@ -1079,7 +1076,11 @@ def render_confirmation_editor(view, db, selected):
         for identity, rows in grouped:
             if not isinstance(identity, tuple):identity=(identity, '')
             customer_code, customer_name = (list(identity) + ['',''])[:2]
-            with st.container(border=True):
+            all_confirmed = rows['확인결과'].eq('확인').all()
+            any_confirmed = rows['확인결과'].eq('확인').any()
+            card_status = 'confirmed' if all_confirmed else ('partial' if any_confirmed else 'pending')
+            group_identity = hashlib.sha256('|'.join(rows['행키'].astype(str)).encode()).hexdigest()[:16]
+            with st.container(border=True, key=f"review_card_{card_status}_{selected}_{group_identity}"):
                 st.markdown(
                     '<div class="review-customer"><div><span class="review-customer-code">'
                     + text(customer_code) + '</span><span class="review-customer-name">'
@@ -1097,8 +1098,7 @@ def render_confirmation_editor(view, db, selected):
                     row_key = row['행키']
                     current = row.get('확인결과', '미확인')
                     row_status = 'confirmed' if current == '확인' else 'pending'
-                    status_text = '✓ 확인 완료' if current == '확인' else '미확인'
-                    with st.container(key=f"review_{row_status}_{selected}_{row_key}"):
+                    with st.container(key=f"review_row_{row_status}_{selected}_{row_key}"):
                         state, content = st.columns([0.8, 6.5], vertical_alignment='center')
                         widget_key = f"auto_check_{selected}_{row_key}_{current}"
                         state.selectbox(
@@ -1137,7 +1137,7 @@ def render_confirmation_editor(view, db, selected):
                             '<div class="review-number">'+money(row.get('기준단가'))+'</div>'
                             '<div class="review-number review-actual">'+money(row.get('단가'))+'</div>'
                             '<div class="review-number review-difference">'+money(row.get('차이규모'))+'</div></div>'
-                            '<div class="review-row-bottom"><span class="review-confirmation-badge '+row_status+'">'+status_text+'</span><span class="review-badge '+badge_class+'">'+escape(judgment)+'</span>'
+                            '<div class="review-row-bottom"><span class="review-badge '+badge_class+'">'+escape(judgment)+'</span>'
                             '<span class="review-basis">'+text(row.get('기준구분'))+'</span></div>'
                             '<details class="review-details"><summary>상세내역</summary><div class="review-detail-fields">'+detail_html+'</div></details></div>'
                         )
