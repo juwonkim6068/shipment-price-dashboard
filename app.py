@@ -1171,7 +1171,6 @@ def main():
                 <span>01 자료 선택</span>
                 <span>02 현황 확인</span>
                 <span>03 출고 찾기</span>
-                <span>04 결과 저장</span>
             </div>
         </div>
         """,
@@ -1386,7 +1385,6 @@ def main():
     tabs = st.tabs([
         "② 전체 현황 · 무엇이 문제인가요?",
         "③ 출고 찾기 · 어떤 건을 볼까요?",
-        "④ 결과 기록 · 확인 후 저장하세요",
     ])
 
     with tabs[0]:
@@ -1450,8 +1448,7 @@ def main():
         section(
             "03",
             "확인할 출고를 찾으세요",
-            "조회 범위를 고르고 거래처나 품번을 검색하세요. "
-            "표에서 내역을 확인한 뒤 ‘④ 결과 기록’으로 이동하세요.",
+            "거래처·품목으로 검색하세요. 확인결과는 변경 즉시 자동 저장됩니다.",
         )
 
         with st.container(border=True):
@@ -1548,199 +1545,6 @@ def main():
                 "spreadsheetml.sheet"
             ),
         )
-
-        st.info(
-            "다음 할 일: ‘④ 결과 기록’ 탭을 누르세요. "
-            "지금 조회한 출고 중에서 기록할 건을 "
-            "선택할 수 있습니다."
-        )
-
-    with tabs[2]:
-        section(
-            "04",
-            "확인한 내용을 저장하세요",
-            "‘③ 출고 찾기’의 조회 결과와 연결됩니다. "
-            "출고 선택 → 단가 확인 → 결과 입력 → 저장 "
-            "순서로 진행하세요.",
-        )
-
-        if st.session_state.pop(
-            "review_saved",
-            False,
-        ):
-            st.success(
-                "확인 기록을 저장했습니다. "
-                "다른 직원도 ‘최신 내용 불러오기’를 "
-                "누르면 확인할 수 있습니다."
-            )
-
-        if view.empty:
-            st.info(
-                "조회된 출고가 없습니다. "
-                "‘③ 출고 찾기’에서 조회 범위를 변경해 주세요."
-            )
-
-        else:
-            row_map = {
-                row["행키"]: row
-                for row in view.to_dict("records")
-            }
-
-            def row_label(key):
-                row = row_map[key]
-
-                return (
-                    f"[{row.get('확인결과', '미확인')}] "
-                    f"{row.get('거래처명', '')} · "
-                    f"{row.get('품명', '')} · "
-                    f"{row.get('출고번호', '')}/"
-                    f"{row.get('순번', '')} · "
-                    f"{row.get('품번', '')}"
-                )
-
-            row_key = st.selectbox(
-                "① 기록할 출고를 선택하세요",
-                list(row_map),
-                format_func=row_label,
-                key=f"row_{selected}",
-            )
-
-            row = row_map[row_key]
-
-            with st.container(border=True):
-                st.subheader(
-                    "② 이 출고의 단가를 확인하세요"
-                )
-
-                st.write(
-                    f"거래처: {row.get('거래처명', '')} / "
-                    f"품명: {row.get('품명', '')} / "
-                    f"품번: {row.get('품번', '')}"
-                )
-
-                st.caption(
-                    f"출고일자 {row.get('출고일자', '')} · "
-                    f"출고번호 {row.get('출고번호', '')} · "
-                    f"자동 판정: {row.get('판정', '')}"
-                )
-
-                a, b, c = st.columns(3)
-
-                for col, label, key in [
-                    (a, "실제 출고단가", "단가"),
-                    (b, "최신 기준단가", "기준단가"),
-                    (c, "단가 차이", "단가차이"),
-                ]:
-                    value = row.get(key)
-
-                    col.metric(
-                        label,
-                        (
-                            "—"
-                            if pd.isna(value)
-                            else f"{value:,.2f}원"
-                        ),
-                    )
-
-                if row.get("기준정보주의"):
-                    st.warning(
-                        "기준정보 주의: "
-                        f"{row['기준정보주의']}"
-                    )
-
-                st.caption(
-                    "최신 단가와 비교한 결과입니다. "
-                    "계약별 예외와 적용기간을 확인한 후 "
-                    "처리하세요."
-                )
-
-            saved = review_map.get(row_key, {})
-
-            with st.form(
-                f"review_{selected}_{row_key}"
-            ):
-                st.subheader(
-                    "③ 확인결과와 사유를 입력하세요"
-                )
-
-                a, b = st.columns(2)
-
-                status = a.selectbox(
-                    "상세 처리결과",
-                    STATUSES,
-                    index=STATUSES.index(
-                        saved.get("status", "확인 중")
-                    ),
-                )
-
-                reviewer = b.text_input(
-                    "담당자",
-                    value=saved.get("reviewer", ""),
-                    max_chars=100,
-                    placeholder="이름 입력",
-                )
-
-                reason = st.text_area(
-                    "확인사유",
-                    value=saved.get("reason", ""),
-                    max_chars=2000,
-                    height=115,
-                    placeholder=(
-                        "예: 별도 계약단가 적용 확인 / "
-                        "출고단가 수정 요청"
-                    ),
-                )
-
-                st.caption(
-                    "정상: 계약 등 근거 확인 / "
-                    "수정 필요: 출고단가 수정 대상 / "
-                    "기준정보 수정 필요: 기준단가 등록 수정 대상"
-                )
-
-                if st.form_submit_button(
-                    "④ 확인 기록 저장하고 팀에 공유",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    try:
-                        (
-                            db.table("inspection_reviews")
-                            .upsert(
-                                [{
-                                    "batch_id": selected,
-                                    "row_key": row_key,
-                                    "status": status,
-                                    "reason": reason,
-                                    "reviewer": reviewer,
-                                },
-                                confirmation_record(
-                                    selected, row_key,
-                                    "미확인" if status == "확인 중" else "확인",
-                                ),
-                                ],
-                                on_conflict="batch_id,row_key",
-                            )
-                            .execute()
-                        )
-
-                        st.session_state[
-                            "review_saved"
-                        ] = True
-
-                        st.rerun()
-
-                    except Exception:
-                        st.error(
-                            "저장하지 못했습니다. "
-                            "잠시 후 다시 시도해 주세요."
-                        )
-
-            st.caption(
-                "같은 건을 여러 사람이 수정하면 "
-                "마지막 저장 내용이 반영됩니다. "
-                "확인결과를 저장해도 원본 엑셀이나 ERP 단가가 "
-                "자동 변경되지는 않습니다."
-            )
 
     st.markdown(
         """
