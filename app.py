@@ -1052,6 +1052,25 @@ def render_card_shipments(diff, row):
             )
 
 
+def select_card_page(state_key, widget_key):
+    value = st.session_state.get(widget_key)
+    if value is not None:
+        st.session_state[state_key] = int(value)
+
+
+def render_card_pagination(page_count, state_key, position):
+    page = max(1, min(int(st.session_state.get(state_key, 1)), page_count))
+    st.session_state[state_key] = page
+    widget_key = f"{state_key}_{position}"
+    st.session_state[widget_key] = page
+    st.pills(
+        "페이지", list(range(1, page_count + 1)),
+        selection_mode="single", key=widget_key,
+        on_change=select_card_page, args=(state_key, widget_key),
+    )
+    return page
+
+
 def render_price_cards(diff, db, selected, review_map, month):
     from html import escape
     import math
@@ -1079,21 +1098,20 @@ def render_price_cards(diff, db, selected, review_map, month):
         for col in ["코드", "거래처명", "품번", "품명"]:
             mask |= cards[col].str.contains(search.strip(), case=False, regex=False, na=False)
         cards = cards[mask].reset_index(drop=True)
-    st.caption(f"{len(cards):,}개 항목 · 단가별 구분")
     if cards.empty:
         st.info("검색 결과가 없습니다. 검색어를 변경해 주세요.")
         return
     page_count = math.ceil(len(cards) / page_size)
-    page_options = list(range(1, page_count + 1))
-    if page_count > 1:
-        page = st.selectbox(
-            "페이지", page_options,
-            format_func=lambda value: f"{value} / {page_count} 페이지",
-            key=f"card_page_{selected}_{month}_{page_size}_{hashlib.sha256(search.encode()).hexdigest()[:10]}",
-        )
-    else:
-        page = 1
-    visible = cards.iloc[(page - 1) * page_size:page * page_size]
+    page_key = f"card_page_{selected}_{month}_{page_size}_{hashlib.sha256(search.encode()).hexdigest()[:10]}"
+    page = render_card_pagination(page_count, page_key, "top")
+    start = (page - 1) * page_size
+    end = min(page * page_size, len(cards))
+    st.caption(
+        f"출고 {int(cards['출고건수'].sum()):,}건 · 묶음 {len(cards):,}개 · "
+        f"{start + 1:,}–{end:,}개 표시 · {page}/{page_count} 페이지"
+    )
+    st.caption("같은 거래처·품목·단가는 묶어서 표시합니다. 각 카드의 ‘출고 상세’를 열면 개별 내역을 볼 수 있습니다.")
+    visible = cards.iloc[start:end]
     for row in visible.to_dict("records"):
         key = row["비고키"]
         saved = review_map.get(key, {})
@@ -1164,6 +1182,7 @@ def render_price_cards(diff, db, selected, review_map, month):
                     st.success("저장 완료")
             st.markdown('<div class="shipment-details-gap"></div>', unsafe_allow_html=True)
             render_card_shipments(diff, row)
+    render_card_pagination(page_count, page_key, "bottom")
 
 
 def confirmation_key(row_key):
@@ -1833,5 +1852,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
