@@ -892,13 +892,32 @@ def render_upload(db, owners):
                 return
             fingerprint = upload_fingerprint(price_file.getvalue(), shipment_file.getvalue(), tolerance)
             if st.button("③ 업로드 사전검사", type="primary"):
+                st.session_state.pop("upload_precheck", None)
+                stage = "통합단가 파일 읽기"
                 try:
-                    inspection = inspect_upload(read_excel(price_file), read_excel(shipment_file), tolerance, owners)
+                    price = read_excel(price_file)
+                    stage = "출고현황 파일 읽기"
+                    shipment = read_excel(shipment_file)
+                    stage = "단가·출고 데이터 검사"
+                    inspection = inspect_upload(price, shipment, tolerance, owners)
                     inspection["fingerprint"] = fingerprint
-                    inspection["duplicate"] = find_duplicate_upload(db, fingerprint)
+                    inspection["duplicate"] = []
+                    if not inspection["errors"]:
+                        stage = "서버 중복 등록 조회"
+                        inspection["duplicate"] = find_duplicate_upload(db, fingerprint)
                     st.session_state["upload_precheck"] = inspection
-                except Exception:
-                    st.error("파일을 읽거나 검사하지 못했습니다. Excel 파일 형식과 서버 연결을 확인해 주세요.")
+                except Exception as exc:
+                    import re
+                    error_type = type(exc).__name__
+                    code = str(getattr(exc, "code", ""))
+                    if re.fullmatch(r"[A-Za-z0-9_]{1,20}", code):
+                        error_type += " / " + code
+                    st.error(f"{stage} 단계에서 실패했습니다. 오류 유형: {error_type}")
+                    if stage == "서버 중복 등록 조회":
+                        st.caption("파일 검사는 완료됐지만 중복 여부를 확인하지 못해 저장을 중단했습니다. 잠시 후 사전검사를 다시 눌러 주세요.")
+                    else:
+                        st.caption("선택한 두 파일과 이 오류 유형을 알려주시면 원인을 확인할 수 있습니다.")
+                    return
             inspection = st.session_state.get("upload_precheck")
             if not inspection or inspection.get("fingerprint") != fingerprint:
                 st.caption("파일 또는 허용 차이가 변경되면 다시 검사해 주세요.")
@@ -1814,4 +1833,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
