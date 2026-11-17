@@ -748,7 +748,7 @@ def upload_fingerprint(price_bytes, shipment_bytes, tolerance):
 def find_duplicate_upload(db, fingerprint):
     return (
         db.table("inspection_batches").select("id,title")
-        .contains("results", [{"_자료지문": fingerprint}])
+        .eq("results->0->>_자료지문", fingerprint)
         .limit(1).execute().data
     )
 
