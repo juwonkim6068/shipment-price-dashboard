@@ -1747,10 +1747,11 @@ def main():
             scope = st.radio(
                 "① 어떤 내역을 볼까요?",
                 [
-                    "확인이 필요한 전체",
-                    "단가 차이만",
-                    "기준단가 없는 건",
-                    "전체 출고",
+                    "전체",
+                    "단가 차이",
+                    "기준단가 없음",
+                    "이외",
+                    "전체출고",
                 ],
                 horizontal=True,
                 key=f"scope_{selected}",
@@ -1770,15 +1771,20 @@ def main():
                 key=f"search_{selected}",
             )
 
-        if scope == "단가 차이만":
+        if scope == "단가 차이":
             view = diff.copy()
 
-        elif scope == "기준단가 없는 건":
+        elif scope == "기준단가 없음":
             view = monthly[
                 monthly["판정"].eq("기준단가 확인")
             ].copy()
 
-        elif scope == "전체 출고":
+        elif scope == "이외":
+            view = attention[
+                ~attention["판정"].isin(["단가차이 확인", "기준단가 확인"])
+            ].copy()
+
+        elif scope == "전체출고":
             view = monthly.copy()
 
         else:
